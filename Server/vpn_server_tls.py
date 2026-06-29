@@ -1,0 +1,155 @@
+import socket
+import struct
+import threading
+import os
+import ssl
+
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 尝试从 .env 文件加载环境变量
+def load_env():
+    env_path = os.path.join(SCRIPT_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # 去除引号
+                    value = value.strip('"\'')
+                    os.environ[key] = value
+
+# 从环境变量读取 VALID_TOKENS，格式: token1,token2
+def load_valid_tokens():
+    # 先尝试加载 .env 文件
+    load_env()
+    tokens_str = os.getenv("VALID_TOKENS", "")
+    if not tokens_str:
+        # 如果环境变量未设置，使用默认值
+        return {"my_secure_token_123456"}
+    # 按逗号分割并去空格
+    tokens = [t.strip() for t in tokens_str.split(",")]
+    return set(tokens)
+
+# 加载环境变量并获取有效tokens
+VALID_TOKENS = load_valid_tokens()
+
+def handle_client(tls_socket, tun_fd):
+    try:
+        # === 阶段一：安全鉴权 ===
+        # 1. 读取前 4 字节（魔数 + Token长度）
+        header = tls_socket.recv(4)
+        if len(header) < 4:
+            tls_socket.close()
+            return
+        
+        magic, token_len = struct.unpack("!2sH", header)
+        if magic != b"AH": # Auth Header
+            print("[-] 鉴权失败：非法的协议头部")
+            tls_socket.close()
+            return
+        
+        # 2. 读取 Token 字符串
+        token_bytes = tls_socket.recv(token_len)
+        token = token_bytes.decode('utf-8')
+        
+        # 3. 校验 Token
+        if token in VALID_TOKENS:
+            print(f"[+] 客户端鉴权成功！Token: {token}")
+            tls_socket.sendall(b"OK") # 回复成功
+        else:
+            print(f"[-] 鉴权失败：无效的 Token: {token}")
+            tls_socket.sendall(b"ER") # 回复失败
+            tls_socket.close()
+            return
+
+        # === 阶段二：数据包转发 ===
+        # 线程 A：从客户端读取 IP 包并写入服务器 TUN 网卡
+        def client_to_tun():
+            buffer = b""
+            while True:
+                try:
+                    data = tls_socket.recv(65535)
+                    if not data:
+                        break
+                    buffer += data
+                    while len(buffer) >= 2:
+                        length = struct.unpack("!H", buffer[:2])[0]
+                        if len(buffer) < 2 + length:
+                            break
+                        ip_packet = buffer[2:2+length]
+                        buffer = buffer[2+length:]
+                        
+                        # 写入 Linux TUN 网卡
+                        os.write(tun_fd, ip_packet)
+                except Exception as e:
+                    print(f"[-] 客户端接收异常: {e}")
+                    break
+            tls_socket.close()
+
+        threading.Thread(target=client_to_tun, daemon=True).start()
+
+        # 线程 B：从服务器 TUN 网卡读取回包并发送给客户端
+        while True:
+            try:
+                ip_packet = os.read(tun_fd, 4096)
+                if not ip_packet:
+                    break
+                # 封包格式：[2字节长度][IP数据]
+                length = len(ip_packet)
+                header = struct.pack("!H", length)
+                tls_socket.sendall(header + ip_packet)
+            except Exception as e:
+                print(f"[-] TUN 读取异常: {e}")
+                break
+
+    except Exception as e:
+        print(f"[-] 客户端处理异常: {e}")
+        tls_socket.close()
+
+def main():
+    # 创建 TUN 虚拟网卡
+    # 注意：在 Linux 上运行需要 root 权限
+    try:
+        tun_fd = os.open("/dev/net/tun", os.O_RDWR)
+        # TUNSETIFF flags: IFF_TUN (IP packet), IFF_NO_PI (no extra packet info)
+        import fcntl
+        import array
+        ifr = array.array('B', b'tun0' + b'\x00' * 12 + struct.pack('H', 0x0001 | 0x1000))
+        fcntl.ioctl(tun_fd, 0x400454ca, ifr) # TUNSETIFF
+        print("[+] TUN 网卡 tun0 创建成功")
+    except Exception as e:
+        print(f"[-] 创建 TUN 网卡失败 (需要 root 权限): {e}")
+        return
+
+    # 配置 TLS 上下文
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    cert_path = os.path.join(SCRIPT_DIR, "server.crt")
+    key_path = os.path.join(SCRIPT_DIR, "server.key")
+    context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
+    # 启动 TCP 监听
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("0.0.0.0", 10011))
+    listener.listen(128)
+    print("[+] TLS VPN 服务器已启动，监听端口 10011...")
+
+    while True:
+        try:
+            client_socket, addr = listener.accept()
+            print(f"[+] 收到来自 {addr} 的连接，正在进行 TLS 握手...")
+            # 用 TLS 包裹原始 Socket
+            tls_client = context.wrap_socket(client_socket, server_side=True)
+            print(f"[+] TLS 握手成功！")
+            threading.Thread(target=handle_client, args=(tls_client, tun_fd), daemon=True).start()
+        except Exception as e:
+            print(f"[-] 建立 TLS 连接失败: {e}")
+
+if __name__ == "__main__":
+    main()
