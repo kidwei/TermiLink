@@ -1,22 +1,17 @@
 #import "PacketTunnelProvider.h"
+#import "IntelligentRouteManager.h"
 
 @implementation PacketTunnelProvider
 
 - (void)startTunnelWithOptions:(NSDictionary<NSString *,NSObject *> *)options completionHandler:(void (^)(NSError * _Nullable))completionHandler {
-    NSLog(@"✅ 开始启动 VPN 隧道");
+    NSLog(@"✅ 开始启动 VPN 隧道（智能分割隧道模式）");
 
-    // 配置虚拟网卡
+    // 配置虚拟网卡 - 初始设置：没有包含任何路由，所有流量先走本地
+    // 只有检测不可达的才会动态添加到 VPN 路由
     NSString *serverHost = [[self protocolConfiguration] serverAddress];
-    NEPacketTunnelNetworkSettings *settings = [[NEPacketTunnelNetworkSettings alloc] initWithTunnelRemoteAddress:serverHost];
+    NEPacketTunnelNetworkSettings *initialSettings = [[IntelligentRouteManager sharedManager] generateUpdatedSettingsWithTunnelAddress:serverHost];
 
-    NEIPv4Settings *ipv4Settings = [[NEIPv4Settings alloc] initWithAddresses:@[@"192.168.50.2"] subnetMasks:@[@"255.255.255.0"]];
-    ipv4Settings.includedRoutes = @[[NEIPv4Route defaultRoute]];
-    settings.ipv4Settings = ipv4Settings;
-
-    NEDNSSettings *dnsSettings = [[NEDNSSettings alloc] initWithServers:@[@"8.8.8.8", @"1.1.1.1"]];
-    settings.dnsSettings = dnsSettings;
-
-    [self setTunnelNetworkSettings:settings completionHandler:^(NSError *error) {
+    [self setTunnelNetworkSettings:initialSettings completionHandler:^(NSError *error) {
         if (error) {
             NSLog(@"❌ 设置虚拟网卡失败: %@", error);
             completionHandler(error);
@@ -129,20 +124,44 @@
 }
 
 - (void)startPacketForwarding {
-    // 线程 1: 从虚拟网卡读取 → 发送给服务器
+    // 线程 1: 从虚拟网卡读取 → 如果需要走 VPN → 发送给服务器
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         while (YES) {
             @autoreleasepool {
                 [self.packetFlow readPacketsWithCompletionHandler:^(NSArray<NSData *> *packets, NSArray<NSNumber *> *protocols) {
                     for (NSData *packet in packets) {
-                        uint16_t length = CFSwapInt16HostToBig((uint16_t)packet.length);
-                        NSMutableData *payload = [[NSMutableData alloc] init];
-                        [payload appendBytes:&length length:2];
-                        [payload appendData:packet];
+                        NSString *dstIP = [self extractDestinationIPFromIPPacket:packet];
+                        if (!dstIP) {
+                            // 解析失败，默认走 VPN
+                            [self sendPacketToServer:packet];
+                            continue;
+                        }
 
-                        [self.serverConnection write:payload completionHandler:^(NSError *error) {
-                            if (error) {
-                                NSLog(@"❌ 发送数据包失败: %@", error);
+                        IntelligentRouteManager *routeManager = [IntelligentRouteManager sharedManager];
+                        BOOL shouldRouteVPN = [routeManager shouldRouteThroughVPNForDestinationIP:dstIP];
+
+                        if (shouldRouteVPN) {
+                            // 需要走 VPN
+                            [self sendPacketToServer:packet];
+                        } else {
+                            // 可直接访问，不走 VPN，直接丢弃让本地路由处理
+                            // 在分割隧道模式下，被排除的路由会自动走本地，这里只是保险
+                            NSLog(@"🚀 跳过 VPN → %@（直接访问更快）", dstIP);
+                            continue;
+                        }
+
+                        // 异步检测并更新路由
+                        [routeManager checkAndUpdateRouteForIP:dstIP tunnelProvider:self completion:^(BOOL needsUpdate, NEPacketTunnelNetworkSettings *newSettings) {
+                            if (needsUpdate && newSettings) {
+                                [self setTunnelNetworkSettings:newSettings completionHandler:^(NSError *error) {
+                                    if (error) {
+                                        NSLog(@"⚠️ 更新路由失败: %@", error);
+                                    } else {
+                                        NSLog(@"✅ 路由已更新: %@ -> %@",
+                                            dstIP,
+                                            shouldRouteVPN ? @"VPN" : @"直接访问");
+                                    }
+                                }];
                             }
                         }];
                     }
@@ -207,6 +226,42 @@
             NSLog(@"❌ 服务器连接已断开");
         }
     }
+}
+
+- (NSString *)extractDestinationIPFromIPPacket:(NSData *)packet {
+    if (packet.length < 20) {
+        return nil; // IP 头部至少 20 字节
+    }
+
+    const unsigned char *bytes = packet.bytes;
+
+    // 第一个字节: version (4 bits) + IHL (4 bits)
+    // IHL = 头部长度，单位 4 字节
+    int ihl = (bytes[0] & 0x0F) * 4;
+    if (ihl < 20 || packet.length < ihl) {
+        return nil;
+    }
+
+    // 目标 IP 在偏移 16 字节处（从 0 开始），4 字节
+    uint8_t ip1 = bytes[16];
+    uint8_t ip2 = bytes[17];
+    uint8_t ip3 = bytes[18];
+    uint8_t ip4 = bytes[19];
+
+    return [NSString stringWithFormat:@"%d.%d.%d.%d", ip1, ip2, ip3, ip4];
+}
+
+- (void)sendPacketToServer:(NSData *)packet {
+    uint16_t length = CFSwapInt16HostToBig((uint16_t)packet.length);
+    NSMutableData *payload = [[NSMutableData alloc] init];
+    [payload appendBytes:&length length:2];
+    [payload appendData:packet];
+
+    [self.serverConnection write:payload completionHandler:^(NSError *error) {
+        if (error) {
+            NSLog(@"❌ 发送数据包失败: %@", error);
+        }
+    }];
 }
 
 @end
