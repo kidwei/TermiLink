@@ -127,13 +127,10 @@
     }
 
     ipv4Settings.excludedRoutes = excludedRoutes;
-    settings.ipv4Settings = ipv4Settings;
+    settings.IPv4Settings = ipv4Settings;
 
     // DNS 设置
-    settings.dnsSettings = [[NEDNSSettings alloc] initWithServers:@[@"8.8.8.8", @"1.1.1.1"]];
-
-    // MTU
-    settings.mtu = @(1500);
+    settings.DNSSettings = [[NEDNSSettings alloc] initWithServers:@[@"8.8.8.8", @"1.1.1.1"]];
 
     return settings;
 }

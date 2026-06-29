@@ -1,4 +1,10 @@
 #import "ReachabilityDetector.h"
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import <errno.h>
 
 @implementation ReachabilityDetector
 

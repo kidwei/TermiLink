@@ -20,15 +20,10 @@
 
         NSLog(@"✅ 虚拟网卡配置完成，开始连接服务器");
 
-        // 连接服务器（启用 TLS）
-        NWHostEndpoint *endpoint = [[NWHostEndpoint alloc] initWithHostname:serverHost port:@"10011"];
+        // 连接服务器（当前不使用 TLS 以绕过自签名证书验证问题）
+        NWHostEndpoint *endpoint = [NWHostEndpoint endpointWithHostname:serverHost port:@"10011"];
 
-        // 创建 TLS 参数
-        TLSParameters *tlsParams = [[TLSParameters alloc] init];
-        // 允许自签名证书
-        tlsParams.disableServerCertificateVerification = YES;
-
-        self.serverConnection = [self createTCPConnectionToEndpoint:endpoint enableTLS:YES TLSParameters:tlsParams delegate:nil];
+        self.serverConnection = [self createTCPConnectionThroughTunnelToEndpoint:endpoint enableTLS:NO TLSParameters:nil delegate:nil];
 
         // 添加状态观察
         [self.serverConnection addObserver:self forKeyPath:@"state" options:NSKeyValueObservingOptionNew context:nil];

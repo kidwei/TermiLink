@@ -58,7 +58,7 @@
     self.manager.localizedDescription = @"TermiLink VPN";
 
     NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
-    proto.providerBundleIdentifier = @"com.yourcompany.TermiLink.PacketTunnel"; // 需要替换为你的 Bundle ID
+    proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
     proto.serverAddress = serverIP;
 
     self.manager.protocolConfiguration = proto;
