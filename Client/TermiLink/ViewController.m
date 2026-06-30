@@ -45,6 +45,7 @@
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ServerCell"];
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"StatusCell"];
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ButtonCell"];
+    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"LogCell"];
 
     [self.tableView reloadData];
 }
@@ -111,7 +112,7 @@
 
 #pragma mark - UITableViewDataSource
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 3;
+    return 4;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -142,7 +143,7 @@
         [statusCell.contentView addSubview:statusTitleLabel];
         [statusCell.contentView addSubview:self.statusLabel];
         return statusCell;
-    } else {
+    } else if (indexPath.section == 2) {
         // 连接按钮 cell
         UITableViewCell *buttonCell = [tableView dequeueReusableCellWithIdentifier:@"ButtonCell" forIndexPath:indexPath];
         self.connectButton = [[UIButton alloc] initWithFrame:CGRectInset(buttonCell.contentView.bounds, 10, 8)];
@@ -153,6 +154,16 @@
         [self.connectButton addTarget:self action:@selector(connectButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
         [buttonCell.contentView addSubview:self.connectButton];
         return buttonCell;
+    } else {
+        // 查看日志 cell
+        UITableViewCell *logCell = [tableView dequeueReusableCellWithIdentifier:@"LogCell" forIndexPath:indexPath];
+        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, 200, 20)];
+        titleLabel.text = @"查看连接日志";
+        titleLabel.font = [UIFont systemFontOfSize:16];
+        titleLabel.textColor = [UIColor systemBlueColor];
+        [logCell.contentView addSubview:titleLabel];
+        logCell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return logCell;
     }
 }
 
@@ -161,9 +172,43 @@
         return 50;
     } else if (indexPath.section == 1) {
         return 44;
-    } else {
+    } else if (indexPath.section == 2) {
         return 60;
+    } else {
+        return 44;
     }
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.section == 3) {
+        // 点击查看日志
+        [self showPacketTunnelLog];
+    }
+}
+
+- (void)showPacketTunnelLog {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSURL *logURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
+
+    NSString *log = [NSString stringWithContentsOfFile:logURL.path encoding:NSUTF8StringEncoding error:nil];
+    if (!log || log.length == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"日志为空" message:@"还没有生成任何日志，请先尝试连接一次 VPN" preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"PacketTunnel 日志" message:log preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"复制" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        UIPasteboard.generalPasteboard.string = log;
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"清除日志" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [@"" writeToFile:logURL.path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end

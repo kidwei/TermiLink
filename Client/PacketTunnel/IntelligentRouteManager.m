@@ -97,13 +97,15 @@
     NEIPv4Settings *ipv4Settings = [[NEIPv4Settings alloc] initWithAddresses:@[@"192.168.50.2"] subnetMasks:@[@"255.255.255.0"]];
 
     // 智能分割隧道策略：
-    // 1. 默认不包含任何路由（所有流量走本地）
-    // 2. 只把检测不可达的（需要走 VPN 的）添加到 includedRoutes
+    // 1. 初始状态不劫持任何流量（includedRoutes 为空），所有流量走本地
+    //    ⚠️ 绝对不能放 0.0.0.0/0 默认路由！否则隧道没建好时所有流量被吸入死隧道，设备直接断网
+    // 2. 之后只把检测不可达的（需要走 VPN 的）/32 路由加入 includedRoutes
     // 3. 把所有内网和检测可达的排除
 
     NSMutableArray<NEIPv4Route *> *includedRoutes = [[NSMutableArray alloc] init];
 
     // 将所有确认不可达的 /32 路由添加到包含列表 → 只有这些走 VPN
+    // 初始为空也是合法的（表示初始不劫持任何流量）
     for (NSString *ip in _unreachableIPs) {
         NEIPv4Route *route = [[NEIPv4Route alloc] initWithDestinationAddress:ip subnetMask:@"255.255.255.255"];
         [includedRoutes addObject:route];
