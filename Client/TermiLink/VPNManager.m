@@ -55,25 +55,54 @@
 }
 
 - (void)startVPNWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
-    // 先移除所有已存在的配置，避免"需要更新"问题
+    // 先加载已有配置
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
-
-        if (!managers || managers.count == 0) {
-            // 没有旧配置，直接创建新的
-            [self createNewConfigurationWithServerIP:serverIP completion:completion];
+        if (loadError) {
+            completion(loadError);
             return;
         }
 
-        // 有旧配置，等全部删除完再创建新配置
-        __block NSInteger remainingCount = managers.count;
-        for (NETunnelProviderManager *existingManager in managers) {
-            [existingManager removeFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
-                remainingCount--;
-                if (remainingCount == 0) {
-                    // 全部删除完成，创建新配置
-                    [self createNewConfigurationWithServerIP:serverIP completion:completion];
+        NETunnelProviderManager *existingManager = nil;
+        if (managers && managers.count > 0) {
+            // 找到已有的 TermiLink 配置，复用它
+            for (NETunnelProviderManager *manager in managers) {
+                if ([manager.localizedDescription isEqualToString:@"TermiLink VPN"]) {
+                    existingManager = manager;
+                    break;
                 }
+            }
+        }
+
+        if (existingManager) {
+            // 使用已有配置，只更新 IP 地址
+            self.manager = existingManager;
+            NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)existingManager.protocolConfiguration;
+            if (!proto) {
+                proto = [[NETunnelProviderProtocol alloc] init];
+                proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
+            }
+            proto.serverAddress = serverIP;
+            existingManager.protocolConfiguration = proto;
+            existingManager.enabled = YES;
+
+            [existingManager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+                if (error) {
+                    completion(error);
+                    return;
+                }
+                [existingManager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+                    if (error) {
+                        completion(error);
+                        return;
+                    }
+                    NSError *startError = nil;
+                    [existingManager.connection startVPNTunnelAndReturnError:&startError];
+                    completion(startError);
+                }];
             }];
+        } else {
+            // 没有配置，创建新的
+            [self createNewConfigurationWithServerIP:serverIP completion:completion];
         }
     }];
 }
@@ -91,20 +120,20 @@
     newManager.enabled = YES;
     self.manager = newManager;
 
-    [self.manager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+    [newManager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
         if (error) {
             completion(error);
             return;
         }
 
-        [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+        [newManager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
             if (error) {
                 completion(error);
                 return;
             }
 
             NSError *startError = nil;
-            [self.manager.connection startVPNTunnelAndReturnError:&startError];
+            [newManager.connection startVPNTunnelAndReturnError:&startError];
             completion(startError);
         }];
     }];
