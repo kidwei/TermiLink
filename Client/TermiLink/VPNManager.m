@@ -57,40 +57,55 @@
 - (void)startVPNWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
     // 先移除所有已存在的配置，避免"需要更新"问题
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
-        if (managers) {
-            for (NETunnelProviderManager *existingManager in managers) {
-                [existingManager removeFromPreferencesWithCompletionHandler:nil];
-            }
+
+        if (!managers || managers.count == 0) {
+            // 没有旧配置，直接创建新的
+            [self createNewConfigurationWithServerIP:serverIP completion:completion];
+            return;
         }
 
-        // 创建全新的配置
-        NETunnelProviderManager *newManager = [[NETunnelProviderManager alloc] init];
-        newManager.localizedDescription = @"TermiLink VPN";
+        // 有旧配置，等全部删除完再创建新配置
+        __block NSInteger remainingCount = managers.count;
+        for (NETunnelProviderManager *existingManager in managers) {
+            [existingManager removeFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+                remainingCount--;
+                if (remainingCount == 0) {
+                    // 全部删除完成，创建新配置
+                    [self createNewConfigurationWithServerIP:serverIP completion:completion];
+                }
+            }];
+        }
+    }];
+}
 
-        NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
-        proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
-        proto.serverAddress = serverIP;
+- (void)createNewConfigurationWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
+    // 创建全新的配置
+    NETunnelProviderManager *newManager = [[NETunnelProviderManager alloc] init];
+    newManager.localizedDescription = @"TermiLink VPN";
 
-        newManager.protocolConfiguration = proto;
-        newManager.enabled = YES;
-        self.manager = newManager;
+    NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
+    proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
+    proto.serverAddress = serverIP;
 
-        [self.manager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+    newManager.protocolConfiguration = proto;
+    newManager.enabled = YES;
+    self.manager = newManager;
+
+    [self.manager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+        if (error) {
+            completion(error);
+            return;
+        }
+
+        [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
             if (error) {
                 completion(error);
                 return;
             }
 
-            [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
-                if (error) {
-                    completion(error);
-                    return;
-                }
-
-                NSError *startError = nil;
-                [self.manager.connection startVPNTunnelAndReturnError:&startError];
-                completion(startError);
-            }];
+            NSError *startError = nil;
+            [self.manager.connection startVPNTunnelAndReturnError:&startError];
+            completion(startError);
         }];
     }];
 }
