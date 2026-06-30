@@ -285,38 +285,13 @@ static void WriteLog(NSString *format, ...) {
 - (void)startPacketForwarding {
     WriteLog(@"✅ [PacketTunnel] 开始从虚拟网卡读取数据包");
 
-    // 从虚拟网卡读取 → 发送给服务器
+    // 全局代理模式：从虚拟网卡读取的所有数据包都发送给服务器
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         while (YES) {
             @autoreleasepool {
                 [self.packetFlow readPacketsWithCompletionHandler:^(NSArray<NSData *> *packets, NSArray<NSNumber *> *protocols) {
                     for (NSData *packet in packets) {
-                        NSString *dstIP = [self extractDestinationIPFromIPPacket:packet];
-                        if (!dstIP) {
-                            [self sendPacketToServer:packet];
-                            continue;
-                        }
-
-                        IntelligentRouteManager *routeManager = [IntelligentRouteManager sharedManager];
-                        BOOL shouldRouteVPN = [routeManager shouldRouteThroughVPNForDestinationIP:dstIP];
-
-                        if (shouldRouteVPN) {
-                            [self sendPacketToServer:packet];
-                        } else {
-                            continue;
-                        }
-
-                        [routeManager checkAndUpdateRouteForIP:dstIP tunnelProvider:self completion:^(BOOL needsUpdate, NEPacketTunnelNetworkSettings *newSettings) {
-                            if (needsUpdate && newSettings) {
-                                [self setTunnelNetworkSettings:newSettings completionHandler:^(NSError *error) {
-                                    if (error) {
-                                        WriteLog(@"⚠️ [PacketTunnel] 更新路由失败: %@", error);
-                                    } else {
-                                        WriteLog(@"✅ [PacketTunnel] 路由已更新: %@", dstIP);
-                                    }
-                                }];
-                            }
-                        }];
+                        [self sendPacketToServer:packet];
                     }
                 }];
             }

@@ -36,58 +36,15 @@
 }
 
 - (BOOL)shouldRouteThroughVPNForDestinationIP:(NSString *)ip {
-    // 如果在缓存中已经标记可达 → 不走 VPN
-    if ([_reachableIPs containsObject:ip]) {
-        return NO;
-    }
-    // 如果已经标记不可达 → 走 VPN
-    if ([_unreachableIPs containsObject:ip]) {
-        return YES;
-    }
-    // 未检测过 → 先走 VPN 同时异步检测
+    // 全局代理模式：所有流量都走 VPN
     return YES;
 }
 
 - (void)checkAndUpdateRouteForIP:(NSString *)ip
        tunnelProvider:(NEPacketTunnelProvider *)provider
        completion:(void (^)(BOOL needsUpdate, NEPacketTunnelNetworkSettings *newSettings))completion {
-
-    // 如果已经检测过，且缓存没过期 → 不用重新检测
-    NSDate *cachedTime = _cacheTimestamps[ip];
-    if (cachedTime && -cachedTime.timeIntervalSinceNow < 300) { // 缓存 5 分钟
-        // 缓存有效，不需要更新设置
-        completion(NO, nil);
-        return;
-    }
-
-    [[ReachabilityDetector sharedDetector] checkReachabilityForIP:ip timeout:2.0 completion:^(BOOL isReachable) {
-        BOOL needsUpdate = NO;
-
-        if (isReachable) {
-            if (![_reachableIPs containsObject:ip]) {
-                [_reachableIPs addObject:ip];
-                [_unreachableIPs removeObject:ip];
-                needsUpdate = YES;
-            }
-        } else {
-            if (![_unreachableIPs containsObject:ip]) {
-                [_unreachableIPs addObject:ip];
-                [_reachableIPs removeObject:ip];
-                needsUpdate = YES;
-            }
-        }
-
-        // 更新缓存时间
-        _cacheTimestamps[ip] = [NSDate date];
-
-        if (needsUpdate) {
-            NSString *tunnelAddress = ((NETunnelProviderProtocol *)provider.protocolConfiguration).serverAddress;
-            NEPacketTunnelNetworkSettings *newSettings = [self generateUpdatedSettingsWithTunnelAddress:tunnelAddress];
-            completion(YES, newSettings);
-        } else {
-            completion(NO, nil);
-        }
-    }];
+    // 全局代理模式：不需要动态检测和更新路由，初始就是全局路由
+    completion(NO, nil);
 }
 
 - (NEPacketTunnelNetworkSettings *)generateUpdatedSettingsWithTunnelAddress:(NSString *)tunnelAddress {
@@ -96,39 +53,20 @@
     // IPv4 设置：客户端虚拟地址
     NEIPv4Settings *ipv4Settings = [[NEIPv4Settings alloc] initWithAddresses:@[@"192.168.50.2"] subnetMasks:@[@"255.255.255.0"]];
 
-    // 智能分割隧道策略：
-    // 1. 初始状态不劫持任何流量（includedRoutes 为空），所有流量走本地
-    //    ⚠️ 绝对不能放 0.0.0.0/0 默认路由！否则隧道没建好时所有流量被吸入死隧道，设备直接断网
-    // 2. 之后只把检测不可达的（需要走 VPN 的）/32 路由加入 includedRoutes
-    // 3. 把所有内网和检测可达的排除
+    // 全局代理模式：所有流量都走 VPN
+    // includedRoutes = 0.0.0.0/0 表示全部流量进隧道
+    ipv4Settings.includedRoutes = @[[NEIPv4Route defaultRoute]];
 
-    NSMutableArray<NEIPv4Route *> *includedRoutes = [[NSMutableArray alloc] init];
-
-    // 将所有确认不可达的 /32 路由添加到包含列表 → 只有这些走 VPN
-    // 初始为空也是合法的（表示初始不劫持任何流量）
-    for (NSString *ip in _unreachableIPs) {
-        NEIPv4Route *route = [[NEIPv4Route alloc] initWithDestinationAddress:ip subnetMask:@"255.255.255.255"];
-        [includedRoutes addObject:route];
-    }
-
-    ipv4Settings.includedRoutes = includedRoutes;
-
-    // 排除列表：所有内网网段 + 确认可达的 IP
+    // 排除列表：
+    // 1. VPN 服务器自身 IP → 必须排除，否则与服务器的连接会回环进隧道导致死循环
+    // 2. 本地回环
     NSMutableArray<NEIPv4Route *> *excludedRoutes = [[NSMutableArray alloc] init];
-
-    // 私有内网地址段 → 始终不走 VPN
-    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"10.0.0.0" subnetMask:@"255.0.0.0"]];
-    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"172.16.0.0" subnetMask:@"240.0.0.0"]];
-    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"192.168.0.0" subnetMask:@"255.255.0.0"]];
-    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"127.0.0.0" subnetMask:@"255.0.0.0"]];
-
-    // 添加已检测为可达的 IP 作为排除 → 不走 VPN
-    for (NSString *ip in _reachableIPs) {
-        NEIPv4Route *route = [[NEIPv4Route alloc] initWithDestinationAddress:ip subnetMask:@"255.255.255.255"];
-        [excludedRoutes addObject:route];
+    if (tunnelAddress.length > 0) {
+        [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:tunnelAddress subnetMask:@"255.255.255.255"]];
     }
-
+    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"127.0.0.0" subnetMask:@"255.0.0.0"]];
     ipv4Settings.excludedRoutes = excludedRoutes;
+
     settings.IPv4Settings = ipv4Settings;
 
     // DNS 设置
