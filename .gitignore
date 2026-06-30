@@ -40,3 +40,4 @@ uv.lock
 
 # Logs
 *.log
+*.xcuserstate

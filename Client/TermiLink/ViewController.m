@@ -15,7 +15,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.title = @"TermiLink";
+    self.title = @"VPNTool";
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
     [self setupUI];
