@@ -55,30 +55,42 @@
 }
 
 - (void)startVPNWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
-    self.manager.localizedDescription = @"TermiLink VPN";
-
-    NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
-    proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
-    proto.serverAddress = serverIP;
-
-    self.manager.protocolConfiguration = proto;
-    self.manager.enabled = YES;
-
-    [self.manager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
-        if (error) {
-            completion(error);
-            return;
+    // 先移除所有已存在的配置，避免"需要更新"问题
+    [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
+        if (managers) {
+            for (NETunnelProviderManager *existingManager in managers) {
+                [existingManager removeFromPreferencesWithCompletionHandler:nil];
+            }
         }
 
-        [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+        // 创建全新的配置
+        NETunnelProviderManager *newManager = [[NETunnelProviderManager alloc] init];
+        newManager.localizedDescription = @"TermiLink VPN";
+
+        NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
+        proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
+        proto.serverAddress = serverIP;
+
+        newManager.protocolConfiguration = proto;
+        newManager.enabled = YES;
+        self.manager = newManager;
+
+        [self.manager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
             if (error) {
                 completion(error);
                 return;
             }
 
-            NSError *startError = nil;
-            [self.manager.connection startVPNTunnelAndReturnError:&startError];
-            completion(startError);
+            [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
+                if (error) {
+                    completion(error);
+                    return;
+                }
+
+                NSError *startError = nil;
+                [self.manager.connection startVPNTunnelAndReturnError:&startError];
+                completion(startError);
+            }];
         }];
     }];
 }
