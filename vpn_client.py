@@ -1,15 +1,62 @@
 import socket
 import ssl
 import struct
-
-SERVER_IP = "129.226.94.203"  # 替换为你的服务器 IP
-SERVER_PORT = 10011
-AUTH_TOKEN = "kidwei123456"  # 必须与服务器 VALID_TOKENS 一致
-import socket
-import ssl
-import struct
 import time
 import random
+import json
+import urllib.request
+import urllib.error
+
+SERVER_IP = "129.226.94.203"  # 替换为你的服务器 IP
+SERVER_PORT = 10011           # VPN 隧道端口
+API_PORT = 8000               # FastAPI 控制接口端口
+AUTH_TOKEN = "kidwei123456"   # 必须与服务器 VALID_TOKENS 一致
+ADMIN_TOKEN = "zhaowei1111"   # 必须与服务器 ADMIN_TOKEN 一致（保护 /api/* 接口）
+
+API_BASE = f"http://{SERVER_IP}:{API_PORT}"
+
+
+def _api_request(path, method="GET"):
+    """调用服务端 FastAPI 控制接口，返回解析后的 JSON dict。"""
+    url = f"{API_BASE}{path}"
+    headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+    req = urllib.request.Request(url, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        print(f"[-] 接口 {method} {path} 返回 HTTP {e.code}: {detail}")
+        return None
+    except Exception as e:
+        print(f"[-] 接口 {method} {path} 请求失败: {e}")
+        return None
+
+
+def api_status():
+    print("[*] 查询 VPN 服务状态: GET /api/status")
+    result = _api_request("/api/status")
+    if result is not None:
+        print(f"[<-] 状态: {result}")
+    return result
+
+
+def api_start_server():
+    print("[*] 请求启动 VPN 服务: POST /api/start_server")
+    result = _api_request("/api/start_server", method="POST")
+    if result is not None:
+        print(f"[<-] 返回: {result}")
+    return result
+
+
+def api_stop_server():
+    print("[*] 请求停止 VPN 服务: POST /api/stop_server")
+    result = _api_request("/api/stop_server", method="POST")
+    if result is not None:
+        print(f"[<-] 返回: {result}")
+    return result
+
 # 构造一个标准的 ICMP Echo Request (Ping) 数据包
 def build_icmp_ping_packet():
     # IP 头部 (20 字节)
@@ -114,13 +161,48 @@ def test_forwarding():
                 print("[🎉] 服务器已成功将客户端流量 NAT 转发至外网，并正确返回了响应！")
                 print("[🎉] ==================================================\n")
                 ssl_socket.close()
-                return
-                
+                return True
+
     except socket.timeout:
         print("[-] ❌ 超时，未收到预期的 8.8.8.8 Ping 响应包")
-    
+
     ssl_socket.close()
+    return False
+
+
+def main():
+    """完整测试流程：通过 API 启动 VPN -> 端到端转发测试 -> 通过 API 停止 VPN。"""
+    print("=" * 60)
+    print("[*] 步骤 1：查询初始状态")
+    api_status()
+
+    print("\n" + "=" * 60)
+    print("[*] 步骤 2：调用 /api/start_server 启动 VPN")
+    start_result = api_start_server()
+    if not start_result or not start_result.get("running"):
+        print("[-] VPN 未能启动，测试终止")
+        return
+
+    # 等待服务端 listener / TUN 就绪
+    time.sleep(2)
+    api_status()
+
+    print("\n" + "=" * 60)
+    print("[*] 步骤 3：端到端转发测试")
+    try:
+        success = test_forwarding()
+    except Exception as e:
+        print(f"[-] 转发测试异常: {e}")
+        success = False
+
+    print("\n" + "=" * 60)
+    print("[*] 步骤 4：调用 /api/stop_server 停止 VPN")
+    api_stop_server()
+    api_status()
+
+    print("\n" + "=" * 60)
+    print(f"[*] 测试结果: {'✅ 成功' if success else '❌ 失败'}")
 
 
 if __name__ == "__main__":
-    test_forwarding()
+    main()
