@@ -119,6 +119,11 @@ class VPNServer:
                 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 listener.bind((self.host, self.port))
                 listener.listen(128)
+                # Give accept() a timeout so the accept loop can periodically
+                # wake up and observe self.running == False. Without this, a
+                # listener.close() from stop() will NOT unblock a thread that is
+                # blocked in accept() on Linux, leaving port bound (EADDRINUSE).
+                listener.settimeout(1.0)
             except Exception as e:
                 os.close(tun_fd)
                 print(f"[-] Failed to bind listener: {e}")
@@ -150,7 +155,9 @@ class VPNServer:
 
             self.running = False
 
-            # Close listener to break the accept loop
+            # Close listener to break the accept loop. Note: on Linux this does
+            # not unblock a thread already blocked in accept(); the accept loop
+            # relies on the socket timeout to notice self.running == False.
             if self.listener is not None:
                 try:
                     self.listener.close()
@@ -174,6 +181,16 @@ class VPNServer:
                 except Exception:
                     pass
                 self.tun_fd = None
+
+            # Wait for the worker threads to actually exit so their file
+            # descriptors (and the listening port) are fully released before
+            # this call returns. Otherwise a subsequent start() may fail with
+            # EADDRINUSE because the old listener socket is still alive.
+            for t in (self.accept_thread, self.tun_thread):
+                if t is not None and t.is_alive() and t is not threading.current_thread():
+                    t.join(timeout=3.0)
+            self.accept_thread = None
+            self.tun_thread = None
 
             print("[+] VPN service stopped")
             return True, "VPN service stopped"
@@ -228,6 +245,10 @@ class VPNServer:
                 threading.Thread(
                     target=self._handle_client, args=(tls_client,), daemon=True
                 ).start()
+            except socket.timeout:
+                # Expected: the listener timeout fires so we can re-check
+                # self.running and exit promptly when stop() is called.
+                continue
             except Exception as e:
                 if not self.running:
                     break
