@@ -51,6 +51,7 @@ static void WriteLog(NSString *format, ...) {
 
     NEPacketTunnelNetworkSettings *initialSettings = [[IntelligentRouteManager sharedManager] generateUpdatedSettingsWithTunnelAddress:serverHost];
 
+    __weak PacketTunnelProvider *weakSelf = self;
     [self setTunnelNetworkSettings:initialSettings completionHandler:^(NSError *error) {
         if (error) {
             WriteLog(@"❌ [PacketTunnel] 设置虚拟网卡失败: %@ (code: %ld)", error, (long)error.code);
@@ -60,12 +61,15 @@ static void WriteLog(NSString *format, ...) {
 
         WriteLog(@"✅ [PacketTunnel] 虚拟网卡配置完成，开始连接服务器");
 
-        self->_readBuffer = [[NSMutableData alloc] init];
-        self->_pendingCompletion = completionHandler;
-        self->_authenticated = NO;
-        self->_connectionQueue = dispatch_queue_create("com.kidwei.vpntool.connection", DISPATCH_QUEUE_SERIAL);
-
-        [self connectToServer:serverHost port:@"10011"];
+        __strong PacketTunnelProvider *strongSelf = weakSelf;
+        if (strongSelf){
+            strongSelf->_readBuffer = [[NSMutableData alloc] init];
+            strongSelf->_pendingCompletion = completionHandler;
+            strongSelf->_authenticated = NO;
+            strongSelf->_connectionQueue = dispatch_queue_create("com.kidwei.vpntool.connection", DISPATCH_QUEUE_SERIAL);
+            
+            [strongSelf connectToServer:serverHost port:@"10011"];
+        }
     }];
 }
 

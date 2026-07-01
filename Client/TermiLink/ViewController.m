@@ -1,5 +1,6 @@
 #import "ViewController.h"
 #import "VPNManager.h"
+#import "ServerAPIClient.h"
 
 @interface ViewController () <UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate>
 
@@ -72,7 +73,8 @@
     VPNManager *manager = [VPNManager sharedManager];
 
     if (manager.isConnected) {
-        [manager stopVPN];
+        // 断开：先停 VPN，再调用 /api/stop_server
+        [self disconnect];
         return;
     }
 
@@ -84,15 +86,66 @@
         return;
     }
 
-    [manager startVPNWithServerIP:serverIP completion:^(NSError *error) {
-        if (error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"连接失败" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:alert animated:YES completion:nil];
-            });
-        }
+    // 连接：先调用 /api/start_server 启动服务端，成功后再建立 VPN 连接
+    [self connectWithServerIP:serverIP];
+}
+
+- (void)connectWithServerIP:(NSString *)serverIP {
+    // 更新 UI 为“正在启动服务端...”
+    self.statusLabel.text = @"正在启动服务端...";
+    self.statusLabel.textColor = [UIColor systemGrayColor];
+    self.connectButton.enabled = NO;
+
+    // 第 1 步：调用服务端 /api/start_server
+    [[ServerAPIClient sharedClient] startServerWithServerIP:serverIP completion:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                self.connectButton.enabled = YES;
+                [self updateUI];
+                [self showAlertWithTitle:@"启动服务端失败" message:error.localizedDescription];
+                return;
+            }
+
+            // 第 2 步：服务端启动成功，建立 VPN 连接
+            self.statusLabel.text = @"正在连接...";
+            [[VPNManager sharedManager] startVPNWithServerIP:serverIP completion:^(NSError *vpnError) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    self.connectButton.enabled = YES;
+                    if (vpnError) {
+                        [self updateUI];
+                        [self showAlertWithTitle:@"连接失败" message:vpnError.localizedDescription];
+                        // VPN 连接失败，尝试把服务端也停掉，避免残留
+                        [[ServerAPIClient sharedClient] stopServerWithServerIP:serverIP completion:^(NSError *e) {}];
+                    }
+                });
+            }];
+        });
     }];
+}
+
+- (void)disconnect {
+    NSString *serverIP = self.serverIPTextField.text;
+
+    // 第 1 步：停止 VPN 隧道
+    [[VPNManager sharedManager] stopVPN];
+
+    // 第 2 步：调用服务端 /api/stop_server
+    if (serverIP.length > 0) {
+        [[ServerAPIClient sharedClient] stopServerWithServerIP:serverIP completion:^(NSError *error) {
+            if (error) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    // 停止服务端失败只提示，不阻塞（VPN 已经断开）
+                    NSLog(@"⚠️ 停止服务端失败: %@", error.localizedDescription);
+                });
+            }
+        }];
+    }
+}
+
+- (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)onVPNStatusChanged:(NSNotification *)notification {
