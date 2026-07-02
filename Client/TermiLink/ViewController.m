@@ -2,12 +2,16 @@
 #import "VPNManager.h"
 #import "ServerAPIClient.h"
 
-@interface ViewController () <UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate>
+@interface ViewController ()
 
-@property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, strong) UITextField *serverIPTextField;
+@property (nonatomic, strong) UIButton *serverButton;
+@property (nonatomic, strong) NSArray<NSDictionary *> *serverList;   // 由 /api/get_serv_list 返回
+@property (nonatomic, assign) BOOL serverListFailed;                 // 列表拉取是否失败
+@property (nonatomic, strong) NSDictionary *selectedServer;
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UIButton *connectButton;
+@property (nonatomic, strong) UITextView *logTextView;
+@property (nonatomic, strong) NSTimer *logTimer;
 
 @end
 
@@ -19,42 +23,209 @@
     self.title = @"VPNTool";
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
+    self.serverList = @[];
+    self.selectedServer = nil;
+
     [self setupUI];
     [self updateUI];
+    [self clearLog];
+    [self refreshLog];
+
+    // 首次进入先拉一次（切前台的通知可能在注册前已触发）
+    [self fetchServerList];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(onVPNStatusChanged:)
                                                  name:@"VPNStatusChanged"
                                                object:nil];
+
+    // App 每次切换到前台都重新拉取服务器列表
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(fetchServerList)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    // 每 2 秒自动刷新日志
+    self.logTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
+                                                     target:self
+                                                   selector:@selector(refreshLog)
+                                                   userInfo:nil
+                                                    repeats:YES];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.logTimer invalidate];
+    self.logTimer = nil;
 }
 
 - (void)setupUI {
-    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
-    self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.tableView.dataSource = self;
-    self.tableView.delegate = self;
-    [self.view addSubview:self.tableView];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
 
-    // 服务器配置 section header
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 50)];
-    UILabel *serverHeader = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 100, 20)];
-    serverHeader.text = @"服务器配置";
-    serverHeader.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    [headerView addSubview:serverHeader];
-    self.tableView.tableHeaderView = headerView;
+    // 服务器选择（下拉菜单）
+    UILabel *serverTitle = [[UILabel alloc] init];
+    serverTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    serverTitle.font = [UIFont systemFontOfSize:16];
+    serverTitle.text = @"服务器:";
+    [self.view addSubview:serverTitle];
 
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ServerCell"];
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"StatusCell"];
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ButtonCell"];
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"LogCell"];
+    self.serverButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.serverButton.translatesAutoresizingMaskIntoConstraints = NO;
+    self.serverButton.titleLabel.font = [UIFont systemFontOfSize:16];
+    self.serverButton.showsMenuAsPrimaryAction = YES;
+    [self rebuildServerMenu];
+    [self.view addSubview:self.serverButton];
 
-    [self.tableView reloadData];
+    // 状态行
+    UILabel *statusTitle = [[UILabel alloc] init];
+    statusTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    statusTitle.font = [UIFont systemFontOfSize:16];
+    statusTitle.text = @"状态:";
+    [self.view addSubview:statusTitle];
+
+    self.statusLabel = [[UILabel alloc] init];
+    self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.statusLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    [self.view addSubview:self.statusLabel];
+
+    // 连接按钮
+    self.connectButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.connectButton.translatesAutoresizingMaskIntoConstraints = NO;
+    self.connectButton.layer.cornerRadius = 8;
+    [self.connectButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.connectButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    [self.connectButton addTarget:self action:@selector(connectButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.connectButton];
+
+    // 日志标题
+    UILabel *logTitle = [[UILabel alloc] init];
+    logTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    logTitle.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    logTitle.textColor = [UIColor secondaryLabelColor];
+    logTitle.text = @"连接日志";
+    [self.view addSubview:logTitle];
+
+    // 复制按钮（字体大小与"连接日志"文本一致）
+    UIButton *copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    copyButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [copyButton setTitle:@"复制" forState:UIControlStateNormal];
+    copyButton.titleLabel.font = logTitle.font;
+    [copyButton addTarget:self action:@selector(copyLogTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:copyButton];
+
+    // 日志展示（直接显示在下方）
+    self.logTextView = [[UITextView alloc] init];
+    self.logTextView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.logTextView.editable = NO;
+    self.logTextView.font = [UIFont fontWithName:@"Menlo" size:11] ?: [UIFont systemFontOfSize:11];
+    self.logTextView.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    self.logTextView.layer.cornerRadius = 8;
+    self.logTextView.textContainerInset = UIEdgeInsetsMake(10, 10, 10, 10);
+    [self.view addSubview:self.logTextView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [serverTitle.topAnchor constraintEqualToAnchor:safe.topAnchor constant:20],
+        [serverTitle.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+
+        [self.serverButton.centerYAnchor constraintEqualToAnchor:serverTitle.centerYAnchor],
+        [self.serverButton.leadingAnchor constraintEqualToAnchor:serverTitle.trailingAnchor constant:8],
+        [self.serverButton.trailingAnchor constraintLessThanOrEqualToAnchor:safe.trailingAnchor constant:-16],
+
+        [statusTitle.topAnchor constraintEqualToAnchor:serverTitle.bottomAnchor constant:16],
+        [statusTitle.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+
+        [self.statusLabel.centerYAnchor constraintEqualToAnchor:statusTitle.centerYAnchor],
+        [self.statusLabel.leadingAnchor constraintEqualToAnchor:statusTitle.trailingAnchor constant:8],
+        [self.statusLabel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+
+        [self.connectButton.topAnchor constraintEqualToAnchor:statusTitle.bottomAnchor constant:20],
+        [self.connectButton.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.connectButton.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [self.connectButton.heightAnchor constraintEqualToConstant:50],
+
+        [logTitle.topAnchor constraintEqualToAnchor:self.connectButton.bottomAnchor constant:24],
+        [logTitle.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+
+        [copyButton.centerYAnchor constraintEqualToAnchor:logTitle.centerYAnchor],
+        [copyButton.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+
+        [self.logTextView.topAnchor constraintEqualToAnchor:logTitle.bottomAnchor constant:8],
+        [self.logTextView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.logTextView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [self.logTextView.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-16],
+    ]];
+}
+
+- (void)fetchServerList {
+    // 调用 /api/get_serv_list 获取服务器列表（控制接口固定 IP）
+    [[ServerAPIClient sharedClient] getServerListWithCompletion:^(NSArray<NSDictionary *> *servers, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                // 请求失败（含超时）弹 Toast 提示
+                self.serverListFailed = YES;
+                [self rebuildServerMenu];
+                [self showToast:@"获取服务器列表失败"];
+                return;
+            }
+            if (servers.count == 0) {
+                self.serverListFailed = YES;
+                [self rebuildServerMenu];
+                [self showToast:@"暂无可用服务器"];
+                return;
+            }
+            self.serverListFailed = NO;
+            [self applyServerList:servers];
+        });
+    }];
+}
+
+- (void)applyServerList:(NSArray<NSDictionary *> *)servers {
+    self.serverList = servers;
+    // 保持已选项（按 ip 匹配），否则默认选第一个
+    NSDictionary *keep = nil;
+    for (NSDictionary *s in servers) {
+        if ([s[@"ip"] isEqual:self.selectedServer[@"ip"]]) {
+            keep = s;
+            break;
+        }
+    }
+    self.selectedServer = keep ?: servers.firstObject;
+    [self rebuildServerMenu];
+    [self updateUI];
+}
+
+- (void)rebuildServerMenu {
+    __weak typeof(self) weakSelf = self;
+    NSMutableArray<UIAction *> *actions = [NSMutableArray array];
+    for (NSDictionary *server in self.serverList) {
+        BOOL isSelected = [server[@"ip"] isEqual:self.selectedServer[@"ip"]];
+        UIAction *action = [UIAction actionWithTitle:(server[@"name"] ?: server[@"ip"])
+                                               image:nil
+                                          identifier:nil
+                                             handler:^(UIAction *act) {
+            weakSelf.selectedServer = server;
+            [weakSelf rebuildServerMenu];
+        }];
+        action.state = isSelected ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:action];
+    }
+    self.serverButton.menu = [UIMenu menuWithTitle:@"" children:actions];
+
+    NSString *title = self.selectedServer[@"name"] ?: self.selectedServer[@"ip"];
+    if (!title) {
+        title = self.serverListFailed ? @"拉取失败" : @"加载中...";
+    }
+    [self.serverButton setTitle:title forState:UIControlStateNormal];
 }
 
 - (void)updateUI {
     VPNManager *manager = [VPNManager sharedManager];
 
-    self.serverIPTextField.enabled = !manager.isConnected;
+    // 连接后不允许切换服务器
+    self.serverButton.enabled = !manager.isConnected;
 
     if (manager.isConnected) {
         self.statusLabel.text = manager.statusText;
@@ -78,26 +249,28 @@
         return;
     }
 
-    NSString *serverIP = self.serverIPTextField.text;
-    if (serverIP.length == 0) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"错误" message:@"请输入服务器 IP 地址" preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+    // 连接：调用 /api/start_server 启动服务端，成功后再建立 VPN 连接
+    [self connect];
+}
+
+- (void)connect {
+    NSDictionary *target = self.selectedServer;
+    NSString *serverIP = target[@"ip"];
+    NSInteger port = [target[@"port"] integerValue];
+    if (serverIP.length == 0 || port == 0) {
+        // 还没拿到服务器列表，先尝试拉取一次
+        [self showAlertWithTitle:@"暂无可用服务器" message:@"正在获取服务器列表，请稍后重试"];
+        [self fetchServerList];
         return;
     }
 
-    // 连接：先调用 /api/start_server 启动服务端，成功后再建立 VPN 连接
-    [self connectWithServerIP:serverIP];
-}
-
-- (void)connectWithServerIP:(NSString *)serverIP {
     // 更新 UI 为“正在启动服务端...”
     self.statusLabel.text = @"正在启动服务端...";
     self.statusLabel.textColor = [UIColor systemGrayColor];
     self.connectButton.enabled = NO;
 
-    // 第 1 步：调用服务端 /api/start_server
-    [[ServerAPIClient sharedClient] startServerWithServerIP:serverIP completion:^(NSError *error) {
+    // 第 1 步：调用服务端 /api/start_server（固定控制 IP）
+    [[ServerAPIClient sharedClient] startServerWithCompletion:^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (error) {
                 self.connectButton.enabled = YES;
@@ -106,16 +279,16 @@
                 return;
             }
 
-            // 第 2 步：服务端启动成功，建立 VPN 连接
+            // 第 2 步：服务端启动成功，建立 VPN 连接（IP + 端口来自选中的服务器）
             self.statusLabel.text = @"正在连接...";
-            [[VPNManager sharedManager] startVPNWithServerIP:serverIP completion:^(NSError *vpnError) {
+            [[VPNManager sharedManager] startVPNWithServerIP:serverIP port:port completion:^(NSError *vpnError) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     self.connectButton.enabled = YES;
                     if (vpnError) {
                         [self updateUI];
                         [self showAlertWithTitle:@"连接失败" message:vpnError.localizedDescription];
                         // VPN 连接失败，尝试把服务端也停掉，避免残留
-                        [[ServerAPIClient sharedClient] stopServerWithServerIP:serverIP completion:^(NSError *e) {}];
+                        [[ServerAPIClient sharedClient] stopServerWithCompletion:^(NSError *e) {}];
                     }
                 });
             }];
@@ -124,22 +297,18 @@
 }
 
 - (void)disconnect {
-    NSString *serverIP = self.serverIPTextField.text;
-
     // 第 1 步：停止 VPN 隧道
     [[VPNManager sharedManager] stopVPN];
 
     // 第 2 步：调用服务端 /api/stop_server
-    if (serverIP.length > 0) {
-        [[ServerAPIClient sharedClient] stopServerWithServerIP:serverIP completion:^(NSError *error) {
-            if (error) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    // 停止服务端失败只提示，不阻塞（VPN 已经断开）
-                    NSLog(@"⚠️ 停止服务端失败: %@", error.localizedDescription);
-                });
-            }
-        }];
-    }
+    [[ServerAPIClient sharedClient] stopServerWithCompletion:^(NSError *error) {
+        if (error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // 停止服务端失败只提示，不阻塞（VPN 已经断开）
+                NSLog(@"⚠️ 停止服务端失败: %@", error.localizedDescription);
+            });
+        }
+    }];
 }
 
 - (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
@@ -151,117 +320,77 @@
 - (void)onVPNStatusChanged:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self updateUI];
+        [self refreshLog];
     });
 }
 
-- (BOOL)textFieldShouldReturn:(UITextField *)textField {
-    [textField resignFirstResponder];
-    return YES;
+- (void)clearLog {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSURL *logURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
+    // 每次 App 启动清空旧日志，只保留本次会话
+    [@"" writeToFile:logURL.path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+- (void)copyLogTapped:(UIButton *)sender {
+    NSString *log = self.logTextView.text ?: @"";
+    UIPasteboard.generalPasteboard.string = log;
+    [self showToast:@"复制成功"];
 }
 
-#pragma mark - UITableViewDataSource
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 4;
+- (void)showToast:(NSString *)message {
+    UILabel *toast = [[UILabel alloc] init];
+    toast.translatesAutoresizingMaskIntoConstraints = NO;
+    toast.text = message;
+    toast.textColor = [UIColor whiteColor];
+    toast.font = [UIFont systemFontOfSize:14];
+    toast.textAlignment = NSTextAlignmentCenter;
+    toast.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8];
+    toast.layer.cornerRadius = 10;
+    toast.layer.masksToBounds = YES;
+    [self.view addSubview:toast];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [toast.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [toast.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [toast.widthAnchor constraintGreaterThanOrEqualToConstant:120],
+        [toast.heightAnchor constraintEqualToConstant:44],
+    ]];
+
+    toast.alpha = 0;
+    [UIView animateWithDuration:0.2 animations:^{
+        toast.alpha = 1;
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.3 delay:1.2 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+            toast.alpha = 0;
+        } completion:^(BOOL finished2) {
+            [toast removeFromSuperview];
+        }];
+    }];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 1;
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == 0) {
-        // 服务器 IP cell
-        UITableViewCell *serverCell = [tableView dequeueReusableCellWithIdentifier:@"ServerCell" forIndexPath:indexPath];
-        self.serverIPTextField = [[UITextField alloc] initWithFrame:CGRectMake(15, 10, serverCell.contentView.bounds.size.width - 30, 30)];
-        self.serverIPTextField.placeholder = @"例如: 129.226.94.203";
-        self.serverIPTextField.keyboardType = UIKeyboardTypeDecimalPad;
-        self.serverIPTextField.delegate = self;
-        self.serverIPTextField.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-        self.serverIPTextField.text = @"129.226.94.203"; // 默认值
-        [serverCell.contentView addSubview:self.serverIPTextField];
-        return serverCell;
-    } else if (indexPath.section == 1) {
-        // 状态 cell
-        UITableViewCell *statusCell = [tableView dequeueReusableCellWithIdentifier:@"StatusCell" forIndexPath:indexPath];
-        UILabel *statusTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, 60, 30)];
-        statusTitleLabel.text = @"状态";
-        statusTitleLabel.font = [UIFont systemFontOfSize:16];
-        self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(statusCell.contentView.bounds.size.width - 200 - 15, 12, 200, 30)];
-        self.statusLabel.textAlignment = NSTextAlignmentRight;
-        self.statusLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
-        [statusCell.contentView addSubview:statusTitleLabel];
-        [statusCell.contentView addSubview:self.statusLabel];
-        return statusCell;
-    } else if (indexPath.section == 2) {
-        // 连接按钮 cell
-        UITableViewCell *buttonCell = [tableView dequeueReusableCellWithIdentifier:@"ButtonCell" forIndexPath:indexPath];
-        self.connectButton = [[UIButton alloc] initWithFrame:CGRectInset(buttonCell.contentView.bounds, 10, 8)];
-        self.connectButton.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        self.connectButton.layer.cornerRadius = 8;
-        [self.connectButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        self.connectButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
-        [self.connectButton addTarget:self action:@selector(connectButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [buttonCell.contentView addSubview:self.connectButton];
-        return buttonCell;
-    } else {
-        // 查看日志 cell
-        UITableViewCell *logCell = [tableView dequeueReusableCellWithIdentifier:@"LogCell" forIndexPath:indexPath];
-        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, 200, 20)];
-        titleLabel.text = @"查看连接日志";
-        titleLabel.font = [UIFont systemFontOfSize:16];
-        titleLabel.textColor = [UIColor systemBlueColor];
-        [logCell.contentView addSubview:titleLabel];
-        logCell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        return logCell;
-    }
-}
-
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == 0) {
-        return 50;
-    } else if (indexPath.section == 1) {
-        return 44;
-    } else if (indexPath.section == 2) {
-        return 60;
-    } else {
-        return 44;
-    }
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-
-    if (indexPath.section == 3) {
-        // 点击查看日志
-        [self showPacketTunnelLog];
-    }
-}
-
-- (void)showPacketTunnelLog {
+- (void)refreshLog {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSURL *logURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
 
     NSString *log = [NSString stringWithContentsOfFile:logURL.path encoding:NSUTF8StringEncoding error:nil];
     if (!log || log.length == 0) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"日志为空" message:@"还没有生成任何日志，请先尝试连接一次 VPN" preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+        self.logTextView.text = @"暂无日志";
         return;
     }
 
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"PacketTunnel 日志" message:log preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"复制" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        UIPasteboard.generalPasteboard.string = log;
-    }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"清除日志" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
-        [@"" writeToFile:logURL.path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    // 内容变化时才更新，避免打断用户滚动/选择
+    if (![self.logTextView.text isEqualToString:log]) {
+        self.logTextView.text = log;
+        // 自动滚动到底部
+        if (log.length > 0) {
+            [self.logTextView scrollRangeToVisible:NSMakeRange(log.length - 1, 1)];
+        }
+    }
+}
+
+- (void)dealloc {
+    [self.logTimer invalidate];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 @end

@@ -4,6 +4,7 @@ import threading
 import os
 import ssl
 import time
+import json
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -352,10 +353,34 @@ def status(_: str = Depends(verify_admin_token)):
     return {"running": vpn_server.is_running()}
 
 
+def load_server_list():
+    """Load the server list clients can connect to from config.json."""
+    config_path = os.path.join(SCRIPT_DIR, "config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        print(f"[-] config.json is not a list, ignoring")
+        return []
+    except FileNotFoundError:
+        print(f"[-] config.json not found at {config_path}")
+        return []
+    except Exception as e:
+        print(f"[-] Failed to load config.json: {e}")
+        return []
+
+
 @app.post("/api/start_server")
 def start_server(_: str = Depends(verify_admin_token)):
     success, message = vpn_server.start()
     return {"success": success, "message": message, "running": vpn_server.is_running()}
+
+
+@app.get("/api/get_serv_list")
+def get_serv_list(_: str = Depends(verify_admin_token)):
+    """Return the server list clients can connect to (from config.json)."""
+    return {"servers": load_server_list()}
 
 
 @app.post("/api/stop_server")

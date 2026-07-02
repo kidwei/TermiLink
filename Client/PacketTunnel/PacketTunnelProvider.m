@@ -49,6 +49,12 @@ static void WriteLog(NSString *format, ...) {
     NSString *serverHost = [[self protocolConfiguration] serverAddress];
     WriteLog(@"📝 [PacketTunnel] 服务器地址: %@", serverHost);
 
+    // 端口由 App 通过 providerConfiguration 传入，默认 10011
+    NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)[self protocolConfiguration];
+    NSNumber *portNumber = proto.providerConfiguration[@"port"];
+    NSString *serverPort = portNumber ? [portNumber stringValue] : @"10011";
+    WriteLog(@"📝 [PacketTunnel] 服务器端口: %@", serverPort);
+
     NEPacketTunnelNetworkSettings *initialSettings = [[IntelligentRouteManager sharedManager] generateUpdatedSettingsWithTunnelAddress:serverHost];
 
     __weak PacketTunnelProvider *weakSelf = self;
@@ -68,7 +74,7 @@ static void WriteLog(NSString *format, ...) {
             strongSelf->_authenticated = NO;
             strongSelf->_connectionQueue = dispatch_queue_create("com.kidwei.vpntool.connection", DISPATCH_QUEUE_SERIAL);
             
-            [strongSelf connectToServer:serverHost port:@"10011"];
+            [strongSelf connectToServer:serverHost port:serverPort];
         }
     }];
 }

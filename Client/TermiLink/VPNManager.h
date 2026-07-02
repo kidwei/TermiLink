@@ -11,7 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (instancetype)sharedManager;
 
-- (void)startVPNWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion;
+- (void)startVPNWithServerIP:(NSString *)serverIP port:(NSInteger)port completion:(void (^)(NSError * _Nullable))completion;
 - (void)stopVPN;
 
 @end

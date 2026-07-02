@@ -32,7 +32,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "25"
             endingLineNumber = "25"
-            landmarkName = "-startServerWithServerIP:completion:"
+            landmarkName = "-getServerListWithCompletion:"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -48,7 +48,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "38"
             endingLineNumber = "38"
-            landmarkName = "-stopServerWithServerIP:completion:"
+            landmarkName = "-startServerWithCompletion:"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

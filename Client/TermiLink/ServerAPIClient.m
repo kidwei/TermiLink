@@ -1,6 +1,7 @@
 #import "ServerAPIClient.h"
 
 // 与服务端 FastAPI 控制接口对应的配置
+static NSString * const kControlServerIP = @"129.226.94.203"; // 控制接口固定 IP（写死）
 static NSInteger const kAPIPort = 8000;              // FastAPI 控制接口端口
 static NSString * const kAdminToken = @"zhaowei1111"; // 必须与服务器 ADMIN_TOKEN 一致
 
@@ -15,13 +16,24 @@ static NSString * const kAdminToken = @"zhaowei1111"; // 必须与服务器 ADMI
     return shared;
 }
 
-- (void)startServerWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
-    [self requestPath:@"/api/start_server" serverIP:serverIP completion:^(NSDictionary *json, NSError *error) {
+- (void)getServerListWithCompletion:(void (^)(NSArray<NSDictionary *> * _Nullable servers, NSError * _Nullable error))completion {
+    [self requestPath:@"/api/get_serv_list" method:@"GET" completion:^(NSDictionary *json, NSError *error) {
+        if (error) {
+            completion(nil, error);
+            return;
+        }
+        NSArray *servers = [json[@"servers"] isKindOfClass:[NSArray class]] ? json[@"servers"] : @[];
+        completion(servers, nil);
+    }];
+}
+
+- (void)startServerWithCompletion:(void (^)(NSError * _Nullable))completion {
+    [self requestPath:@"/api/start_server" method:@"POST" completion:^(NSDictionary *json, NSError *error) {
         if (error) {
             completion(error);
             return;
         }
-        // 服务端返回 { "running": true, ... } 表示启动成功
+        // 服务端返回 { "running": true } 表示启动成功
         if (![json[@"running"] boolValue]) {
             NSError *notRunningError = [NSError errorWithDomain:@"ServerAPIClient" code:-100 userInfo:@{
                 NSLocalizedDescriptionKey: @"服务端 VPN 服务未能启动"
@@ -33,20 +45,21 @@ static NSString * const kAdminToken = @"zhaowei1111"; // 必须与服务器 ADMI
     }];
 }
 
-- (void)stopServerWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
-    [self requestPath:@"/api/stop_server" serverIP:serverIP completion:^(NSDictionary *json, NSError *error) {
+- (void)stopServerWithCompletion:(void (^)(NSError * _Nullable))completion {
+    [self requestPath:@"/api/stop_server" method:@"POST" completion:^(NSDictionary *json, NSError *error) {
         completion(error);
     }];
 }
 
 #pragma mark - 内部方法
 
-// 统一发起 POST 请求，鉴权方式：Authorization: Bearer {ADMIN_TOKEN}
+// 统一发起请求，鉴权方式：Authorization: Bearer {ADMIN_TOKEN}
+// 控制接口固定连接 kControlServerIP:kAPIPort
 - (void)requestPath:(NSString *)path
-           serverIP:(NSString *)serverIP
+             method:(NSString *)method
          completion:(void (^)(NSDictionary * _Nullable json, NSError * _Nullable error))completion {
 
-    NSString *urlString = [NSString stringWithFormat:@"http://%@:%ld%@", serverIP, (long)kAPIPort, path];
+    NSString *urlString = [NSString stringWithFormat:@"http://%@:%ld%@", kControlServerIP, (long)kAPIPort, path];
     NSURL *url = [NSURL URLWithString:urlString];
     if (!url) {
         NSError *urlError = [NSError errorWithDomain:@"ServerAPIClient" code:-101 userInfo:@{
@@ -57,7 +70,7 @@ static NSString * const kAdminToken = @"zhaowei1111"; // 必须与服务器 ADMI
     }
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST";
+    request.HTTPMethod = method;
     request.timeoutInterval = 15;
     // 鉴权头：Bearer ADMIN_TOKEN
     [request setValue:[NSString stringWithFormat:@"Bearer %@", kAdminToken] forHTTPHeaderField:@"Authorization"];

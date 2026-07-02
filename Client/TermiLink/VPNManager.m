@@ -54,7 +54,10 @@
     }];
 }
 
-- (void)startVPNWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
+- (void)startVPNWithServerIP:(NSString *)serverIP port:(NSInteger)port completion:(void (^)(NSError * _Nullable))completion {
+    // 端口通过 providerConfiguration 传给 PacketTunnel 扩展
+    NSDictionary *providerConfig = @{@"port": @(port)};
+
     // 先加载已有配置
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
         if (loadError) {
@@ -74,7 +77,7 @@
         }
 
         if (existingManager) {
-            // 使用已有配置，只更新 IP 地址
+            // 使用已有配置，只更新 IP 地址和端口
             self.manager = existingManager;
             NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)existingManager.protocolConfiguration;
             if (!proto) {
@@ -82,6 +85,7 @@
                 proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
             }
             proto.serverAddress = serverIP;
+            proto.providerConfiguration = providerConfig;
             existingManager.protocolConfiguration = proto;
             existingManager.enabled = YES;
 
@@ -102,12 +106,12 @@
             }];
         } else {
             // 没有配置，创建新的
-            [self createNewConfigurationWithServerIP:serverIP completion:completion];
+            [self createNewConfigurationWithServerIP:serverIP providerConfig:providerConfig completion:completion];
         }
     }];
 }
 
-- (void)createNewConfigurationWithServerIP:(NSString *)serverIP completion:(void (^)(NSError * _Nullable))completion {
+- (void)createNewConfigurationWithServerIP:(NSString *)serverIP providerConfig:(NSDictionary *)providerConfig completion:(void (^)(NSError * _Nullable))completion {
     // 创建全新的配置
     NETunnelProviderManager *newManager = [[NETunnelProviderManager alloc] init];
     newManager.localizedDescription = @"TermiLink VPN";
@@ -115,6 +119,7 @@
     NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
     proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
     proto.serverAddress = serverIP;
+    proto.providerConfiguration = providerConfig;
 
     newManager.protocolConfiguration = proto;
     newManager.enabled = YES;
