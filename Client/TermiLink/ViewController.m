@@ -76,6 +76,18 @@
     self.serverButton.translatesAutoresizingMaskIntoConstraints = NO;
     self.serverButton.titleLabel.font = [UIFont systemFontOfSize:16];
     self.serverButton.showsMenuAsPrimaryAction = YES;
+    // 下拉标识：右侧 chevron 箭头
+    UIImage *chevron = [UIImage systemImageNamed:@"chevron.up.chevron.down"];
+    [self.serverButton setImage:chevron forState:UIControlStateNormal];
+    // 文字在左、箭头在右
+    self.serverButton.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;
+    self.serverButton.imageEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 0);
+    self.serverButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    // 轻边框，看起来像可点的下拉框
+    self.serverButton.layer.borderWidth = 1;
+    self.serverButton.layer.borderColor = [UIColor systemGray4Color].CGColor;
+    self.serverButton.layer.cornerRadius = 8;
+    self.serverButton.contentEdgeInsets = UIEdgeInsetsMake(6, 12, 6, 12);
     [self rebuildServerMenu];
     [self.view addSubview:self.serverButton];
 
@@ -211,6 +223,17 @@
         }];
         action.state = isSelected ? UIMenuElementStateOn : UIMenuElementStateOff;
         [actions addObject:action];
+    }
+
+    // 列表为空时给一个“重新获取”选项，保证菜单可弹出、可重试
+    if (actions.count == 0) {
+        UIAction *retry = [UIAction actionWithTitle:@"重新获取列表"
+                                              image:[UIImage systemImageNamed:@"arrow.clockwise"]
+                                         identifier:nil
+                                            handler:^(UIAction *act) {
+            [weakSelf fetchServerList];
+        }];
+        [actions addObject:retry];
     }
     self.serverButton.menu = [UIMenu menuWithTitle:@"" children:actions];
 
