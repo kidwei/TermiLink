@@ -1,5 +1,13 @@
 #import "VPNManager.h"
 
+static NSString *PacketTunnelBundleIdentifier(void) {
+#if TARGET_OS_OSX
+    return @"com.kidwei.vpntool.mac.PacketTunnel";
+#else
+    return @"com.kidwei.vpntool.PacketTunnel";
+#endif
+}
+
 @interface VPNManager ()
 
 @property (nonatomic, strong) NETunnelProviderManager *manager;
@@ -55,10 +63,8 @@
 }
 
 - (void)startVPNWithServerIP:(NSString *)serverIP port:(NSInteger)port completion:(void (^)(NSError * _Nullable))completion {
-    // 端口通过 providerConfiguration 传给 PacketTunnel 扩展
     NSDictionary *providerConfig = @{@"port": @(port)};
 
-    // 先加载已有配置
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
         if (loadError) {
             completion(loadError);
@@ -67,7 +73,6 @@
 
         NETunnelProviderManager *existingManager = nil;
         if (managers && managers.count > 0) {
-            // 找到已有的 TermiLink 配置，复用它
             for (NETunnelProviderManager *manager in managers) {
                 if ([manager.localizedDescription isEqualToString:@"TermiLink VPN"]) {
                     existingManager = manager;
@@ -77,12 +82,11 @@
         }
 
         if (existingManager) {
-            // 使用已有配置，只更新 IP 地址和端口
             self.manager = existingManager;
             NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)existingManager.protocolConfiguration;
             if (!proto) {
                 proto = [[NETunnelProviderProtocol alloc] init];
-                proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
+                proto.providerBundleIdentifier = PacketTunnelBundleIdentifier();
             }
             proto.serverAddress = serverIP;
             proto.providerConfiguration = providerConfig;
@@ -105,19 +109,17 @@
                 }];
             }];
         } else {
-            // 没有配置，创建新的
             [self createNewConfigurationWithServerIP:serverIP providerConfig:providerConfig completion:completion];
         }
     }];
 }
 
 - (void)createNewConfigurationWithServerIP:(NSString *)serverIP providerConfig:(NSDictionary *)providerConfig completion:(void (^)(NSError * _Nullable))completion {
-    // 创建全新的配置
     NETunnelProviderManager *newManager = [[NETunnelProviderManager alloc] init];
     newManager.localizedDescription = @"TermiLink VPN";
 
     NETunnelProviderProtocol *proto = [[NETunnelProviderProtocol alloc] init];
-    proto.providerBundleIdentifier = @"com.kidwei.vpntool.PacketTunnel";
+    proto.providerBundleIdentifier = PacketTunnelBundleIdentifier();
     proto.serverAddress = serverIP;
     proto.providerConfiguration = providerConfig;
 
@@ -182,7 +184,6 @@
                 break;
         }
 
-        // 发送通知让 UI 更新
         [[NSNotificationCenter defaultCenter] postNotificationName:@"VPNStatusChanged" object:nil];
     });
 }

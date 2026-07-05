@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		5CB3FF0E2FF29E4600D4984F /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5CB3FF0D2FF29E4600D4984F /* NetworkExtension.framework */; };
 		5CB3FF172FF29E4600D4984F /* PacketTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5CB3FF0B2FF29E4600D4984F /* PacketTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5CB400532FF2A00000D4984F /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5CB3FF0D2FF29E4600D4984F /* NetworkExtension.framework */; };
+		5CB400542FF2A00000D4984F /* PacketTunnelMac.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5CB400512FF2A00000D4984F /* PacketTunnelMac.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -18,6 +20,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 5CB3FF0A2FF29E4600D4984F;
 			remoteInfo = PacketTunnel;
+		};
+		5CB400632FF2A00000D4984F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5CB3FEDF2FF29D7200D4984F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5CB400612FF2A00000D4984F;
+			remoteInfo = PacketTunnelMac;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -33,12 +42,25 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CB400622FF2A00000D4984F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5CB400542FF2A00000D4984F /* PacketTunnelMac.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		5CB3FEE72FF29D7300D4984F /* TermiLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TermiLink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5CB3FF0B2FF29E4600D4984F /* PacketTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5CB3FF0D2FF29E4600D4984F /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+		5CB400502FF2A00000D4984F /* TermiLinkMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TermiLinkMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5CB400512FF2A00000D4984F /* PacketTunnelMac.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnelMac.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -56,6 +78,41 @@
 			);
 			target = 5CB3FF0A2FF29E4600D4984F /* PacketTunnel */;
 		};
+		5CB400102FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLink" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+			);
+			target = 5CB3FEE62FF29D7300D4984F /* TermiLink */;
+		};
+		5CB400112FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLinkMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+			);
+			target = 5CB400602FF2A00000D4984F /* TermiLinkMac */;
+		};
+		5CB400202FF2A00000D4984F /* Exceptions for "TermiLinkMac" folder in "TermiLinkMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5CB400602FF2A00000D4984F /* TermiLinkMac */;
+		};
+		5CB400402FF2A00000D4984F /* Exceptions for "PacketTunnel" folder in "PacketTunnelMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PacketTunnel.entitlements,
+			);
+			target = 5CB400612FF2A00000D4984F /* PacketTunnelMac */;
+		};
+		5CB400412FF2A00000D4984F /* Exceptions for "PacketTunnelMac" folder in "PacketTunnelMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PacketTunnelMac.entitlements,
+			);
+			target = 5CB400612FF2A00000D4984F /* PacketTunnelMac */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -71,8 +128,34 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				5CB3FF1B2FF29E4600D4984F /* Exceptions for "PacketTunnel" folder in "PacketTunnel" target */,
+				5CB400402FF2A00000D4984F /* Exceptions for "PacketTunnel" folder in "PacketTunnelMac" target */,
 			);
 			path = PacketTunnel;
+			sourceTree = "<group>";
+		};
+		5CB400122FF2A00000D4984F /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5CB400102FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLink" target */,
+				5CB400112FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLinkMac" target */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		5CB400212FF2A00000D4984F /* TermiLinkMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5CB400202FF2A00000D4984F /* Exceptions for "TermiLinkMac" folder in "TermiLinkMac" target */,
+			);
+			path = TermiLinkMac;
+			sourceTree = "<group>";
+		};
+		5CB400312FF2A00000D4984F /* PacketTunnelMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5CB400412FF2A00000D4984F /* Exceptions for "PacketTunnelMac" folder in "PacketTunnelMac" target */,
+			);
+			path = PacketTunnelMac;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -93,14 +176,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CB400562FF2A00000D4984F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CB400572FF2A00000D4984F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CB400532FF2A00000D4984F /* NetworkExtension.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		5CB3FEDE2FF29D7200D4984F = {
 			isa = PBXGroup;
 			children = (
+				5CB400122FF2A00000D4984F /* Shared */,
 				5CB3FEE92FF29D7300D4984F /* TermiLink */,
+				5CB400212FF2A00000D4984F /* TermiLinkMac */,
 				5CB3FF0F2FF29E4600D4984F /* PacketTunnel */,
+				5CB400312FF2A00000D4984F /* PacketTunnelMac */,
 				5CB3FF0C2FF29E4600D4984F /* Frameworks */,
 				5CB3FEE82FF29D7300D4984F /* Products */,
 			);
@@ -110,7 +211,9 @@
 			isa = PBXGroup;
 			children = (
 				5CB3FEE72FF29D7300D4984F /* TermiLink.app */,
+				5CB400502FF2A00000D4984F /* TermiLinkMac.app */,
 				5CB3FF0B2FF29E4600D4984F /* PacketTunnel.appex */,
+				5CB400512FF2A00000D4984F /* PacketTunnelMac.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -142,6 +245,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				5CB3FEE92FF29D7300D4984F /* TermiLink */,
+				5CB400122FF2A00000D4984F /* Shared */,
 			);
 			name = TermiLink;
 			packageProductDependencies = (
@@ -172,6 +276,54 @@
 			productReference = 5CB3FF0B2FF29E4600D4984F /* PacketTunnel.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		5CB400602FF2A00000D4984F /* TermiLinkMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5CB400702FF2A00000D4984F /* Build configuration list for PBXNativeTarget "TermiLinkMac" */;
+			buildPhases = (
+				5CB400552FF2A00000D4984F /* Sources */,
+				5CB400562FF2A00000D4984F /* Frameworks */,
+				5CB400582FF2A00000D4984F /* Resources */,
+				5CB400622FF2A00000D4984F /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5CB400642FF2A00000D4984F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				5CB400212FF2A00000D4984F /* TermiLinkMac */,
+				5CB400122FF2A00000D4984F /* Shared */,
+			);
+			name = TermiLinkMac;
+			packageProductDependencies = (
+			);
+			productName = TermiLinkMac;
+			productReference = 5CB400502FF2A00000D4984F /* TermiLinkMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		5CB400612FF2A00000D4984F /* PacketTunnelMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5CB400712FF2A00000D4984F /* Build configuration list for PBXNativeTarget "PacketTunnelMac" */;
+			buildPhases = (
+				5CB400592FF2A00000D4984F /* Sources */,
+				5CB400572FF2A00000D4984F /* Frameworks */,
+				5CB4005A2FF2A00000D4984F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5CB3FF0F2FF29E4600D4984F /* PacketTunnel */,
+				5CB400312FF2A00000D4984F /* PacketTunnelMac */,
+			);
+			name = PacketTunnelMac;
+			packageProductDependencies = (
+			);
+			productName = PacketTunnelMac;
+			productReference = 5CB400512FF2A00000D4984F /* PacketTunnelMac.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -185,6 +337,12 @@
 						CreatedOnToolsVersion = 26.2;
 					};
 					5CB3FF0A2FF29E4600D4984F = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					5CB400602FF2A00000D4984F = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					5CB400612FF2A00000D4984F = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -204,7 +362,9 @@
 			projectRoot = "";
 			targets = (
 				5CB3FEE62FF29D7300D4984F /* TermiLink */,
+				5CB400602FF2A00000D4984F /* TermiLinkMac */,
 				5CB3FF0A2FF29E4600D4984F /* PacketTunnel */,
+				5CB400612FF2A00000D4984F /* PacketTunnelMac */,
 			);
 		};
 /* End PBXProject section */
@@ -218,6 +378,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		5CB3FF092FF29E4600D4984F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CB400582FF2A00000D4984F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CB4005A2FF2A00000D4984F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -241,6 +415,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CB400552FF2A00000D4984F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5CB400592FF2A00000D4984F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -248,6 +436,11 @@
 			isa = PBXTargetDependency;
 			target = 5CB3FF0A2FF29E4600D4984F /* PacketTunnel */;
 			targetProxy = 5CB3FF152FF29E4600D4984F /* PBXContainerItemProxy */;
+		};
+		5CB400642FF2A00000D4984F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5CB400612FF2A00000D4984F /* PacketTunnelMac */;
+			targetProxy = 5CB400632FF2A00000D4984F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -264,6 +457,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Shared",
+				);
 				INFOPLIST_FILE = TermiLink/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = VPNTool;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -280,6 +477,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -297,6 +495,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Shared",
+				);
 				INFOPLIST_FILE = TermiLink/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = VPNTool;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -313,9 +515,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -377,7 +581,6 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
 			};
 			name = Debug;
 		};
@@ -432,7 +635,6 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				SDKROOT = iphoneos;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -458,6 +660,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -486,10 +689,139 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5CB400722FF2A00000D4984F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = TermiLinkMac/TermiLinkMac.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Shared",
+				);
+				INFOPLIST_FILE = TermiLinkMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VPNTool;
+				INFOPLIST_KEY_LSMinimumSystemVersion = "$(MACOSX_DEPLOYMENT_TARGET)";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.mac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		5CB400732FF2A00000D4984F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TermiLinkMac/TermiLinkMac.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Shared",
+				);
+				INFOPLIST_FILE = TermiLinkMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VPNTool;
+				INFOPLIST_KEY_LSMinimumSystemVersion = "$(MACOSX_DEPLOYMENT_TARGET)";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.mac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5CB400742FF2A00000D4984F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = PacketTunnelMac/PacketTunnelMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PacketTunnelMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PacketTunnelMac;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.mac.PacketTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		5CB400752FF2A00000D4984F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = PacketTunnelMac/PacketTunnelMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PacketTunnelMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PacketTunnelMac;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kidwei.vpntool.mac.PacketTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -519,6 +851,24 @@
 			buildConfigurations = (
 				5CB3FF192FF29E4600D4984F /* Debug */,
 				5CB3FF1A2FF29E4600D4984F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5CB400702FF2A00000D4984F /* Build configuration list for PBXNativeTarget "TermiLinkMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5CB400722FF2A00000D4984F /* Debug */,
+				5CB400732FF2A00000D4984F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5CB400712FF2A00000D4984F /* Build configuration list for PBXNativeTarget "PacketTunnelMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5CB400742FF2A00000D4984F /* Debug */,
+				5CB400752FF2A00000D4984F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
