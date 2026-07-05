@@ -78,18 +78,6 @@
 			);
 			target = 5CB3FF0A2FF29E4600D4984F /* PacketTunnel */;
 		};
-		5CB400102FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLink" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-			);
-			target = 5CB3FEE62FF29D7300D4984F /* TermiLink */;
-		};
-		5CB400112FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLinkMac" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-			);
-			target = 5CB400602FF2A00000D4984F /* TermiLinkMac */;
-		};
 		5CB400202FF2A00000D4984F /* Exceptions for "TermiLinkMac" folder in "TermiLinkMac" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -101,7 +89,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				PacketTunnel.entitlements,
 			);
 			target = 5CB400612FF2A00000D4984F /* PacketTunnelMac */;
 		};
@@ -109,7 +96,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				PacketTunnelMac.entitlements,
 			);
 			target = 5CB400612FF2A00000D4984F /* PacketTunnelMac */;
 		};
@@ -135,10 +121,6 @@
 		};
 		5CB400122FF2A00000D4984F /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				5CB400102FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLink" target */,
-				5CB400112FF2A00000D4984F /* Exceptions for "Shared" folder in "TermiLinkMac" target */,
-			);
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -291,8 +273,8 @@
 				5CB400642FF2A00000D4984F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				5CB400212FF2A00000D4984F /* TermiLinkMac */,
 				5CB400122FF2A00000D4984F /* Shared */,
+				5CB400212FF2A00000D4984F /* TermiLinkMac */,
 			);
 			name = TermiLinkMac;
 			packageProductDependencies = (
@@ -701,6 +683,7 @@
 		5CB400722FF2A00000D4984F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = TermiLinkMac/TermiLinkMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -708,6 +691,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -736,12 +720,14 @@
 		5CB400732FF2A00000D4984F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = TermiLinkMac/TermiLinkMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -776,6 +762,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PacketTunnelMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = PacketTunnelMac;
@@ -804,6 +791,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6C85P2NTPD;
+				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PacketTunnelMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = PacketTunnelMac;

@@ -14,6 +14,9 @@ static void WriteLog(NSString *format, ...) {
     // 写入文件到 App Group
     NSFileManager *fm = [NSFileManager defaultManager];
     NSURL *groupURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
+    if (!groupURL) {
+        return;
+    }
 
     static NSDateFormatter *formatter;
     static dispatch_once_t onceToken;

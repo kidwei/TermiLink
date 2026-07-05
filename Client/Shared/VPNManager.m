@@ -52,7 +52,16 @@ static NSString *PacketTunnelBundleIdentifier(void) {
         }
 
         if (managers && managers.count > 0) {
-            self.manager = managers.firstObject;
+            NETunnelProviderManager *preferred = nil;
+            NSString *expectedBundleID = PacketTunnelBundleIdentifier();
+            for (NETunnelProviderManager *manager in managers) {
+                NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)manager.protocolConfiguration;
+                if ([proto.providerBundleIdentifier isEqualToString:expectedBundleID]) {
+                    preferred = manager;
+                    break;
+                }
+            }
+            self.manager = preferred ?: managers.firstObject;
             [self.manager loadFromPreferencesWithCompletionHandler:^(NSError * _Nullable error) {
                 if (!error) {
                     [self updateStatus:self.manager.connection.status];
@@ -86,8 +95,9 @@ static NSString *PacketTunnelBundleIdentifier(void) {
             NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)existingManager.protocolConfiguration;
             if (!proto) {
                 proto = [[NETunnelProviderProtocol alloc] init];
-                proto.providerBundleIdentifier = PacketTunnelBundleIdentifier();
             }
+            // 每次连接都刷新 Bundle ID，避免复用 iOS 旧配置导致 macOS 扩展无法加载
+            proto.providerBundleIdentifier = PacketTunnelBundleIdentifier();
             proto.serverAddress = serverIP;
             proto.providerConfiguration = providerConfig;
             existingManager.protocolConfiguration = proto;
@@ -152,6 +162,10 @@ static NSString *PacketTunnelBundleIdentifier(void) {
 
 - (void)vpnStatusDidChange:(NSNotification *)notification {
     NEVPNConnection *connection = notification.object;
+    if (connection != self.manager.connection) {
+        return;
+    }
+    NSLog(@"[VPNManager] 状态变化: %ld", (long)connection.status);
     [self updateStatus:connection.status];
 }
 
