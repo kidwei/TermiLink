@@ -4,6 +4,6 @@
 @interface PacketTunnelProvider : NEPacketTunnelProvider
 
 - (NSString *)extractDestinationIPFromIPPacket:(NSData *)packet;
-- (void)sendPacketToServer:(NSData *)packet;
+- (void)sendFramedDataToServer:(NSData *)framedData;
 
 @end

@@ -1,5 +1,18 @@
 #import "PacketTunnelProvider.h"
 #import "IntelligentRouteManager.h"
+#import <arpa/inet.h>
+#import <netdb.h>
+#import <netinet/in.h>
+#import <pwd.h>
+#import <unistd.h>
+
+#if TARGET_OS_OSX
+// 沙盒下 NSHomeDirectory() 会指向扩展容器，这里取真实用户目录以便与主程序共享日志。
+static NSString *TermiLinkRealHomeDirectory(void) {
+    struct passwd *pw = getpwuid(getuid());
+    return pw ? [NSString stringWithUTF8String:pw->pw_dir] : NSHomeDirectory();
+}
+#endif
 
 // 文件日志帮助函数
 static void WriteLog(NSString *format, ...) {
@@ -11,10 +24,21 @@ static void WriteLog(NSString *format, ...) {
     // 同时输出到系统日志
     NSLog(@"%@", message);
 
-    // 写入文件到 App Group
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSURL *groupURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
-    if (!groupURL) {
+    NSURL *logURL = nil;
+#if TARGET_OS_OSX
+    // macOS 主程序与扩展通过沙盒临时例外共用真实用户目录，避免 App Group 容器写不进去。
+    NSString *logDirectory = [TermiLinkRealHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/TermiLink"];
+    NSError *directoryError = nil;
+    if (![fm createDirectoryAtPath:logDirectory withIntermediateDirectories:YES attributes:nil error:&directoryError]) {
+        NSLog(@"❌ [PacketTunnel] 创建日志目录失败: %@", directoryError);
+        return;
+    }
+    logURL = [NSURL fileURLWithPath:[logDirectory stringByAppendingPathComponent:@"packettunnel.log"]];
+#else
+    logURL = [[fm containerURLForSecurityApplicationGroupIdentifier:@"group.com.kidwei.vpntool"] URLByAppendingPathComponent:@"packettunnel.log"];
+#endif
+    if (!logURL) {
         return;
     }
 
@@ -28,13 +52,13 @@ static void WriteLog(NSString *format, ...) {
     NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [formatter stringFromDate:[NSDate date]], message];
 
     // 追加写入
-    if ([fm fileExistsAtPath:groupURL.path]) {
-        NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:groupURL.path];
+    if ([fm fileExistsAtPath:logURL.path]) {
+        NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:logURL.path];
         [file seekToEndOfFile];
         [file writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
         [file closeFile];
     } else {
-        [line writeToFile:groupURL.path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [line writeToFile:logURL.path atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }
 }
 
@@ -44,6 +68,10 @@ static void WriteLog(NSString *format, ...) {
     NSMutableData *_readBuffer;        // 读缓冲区
     void (^_pendingCompletion)(NSError * _Nullable);
     BOOL _authenticated;               // 是否已完成鉴权
+    NSArray<NSString *> *_routedDestinationIPs;  // 当前已写入路由的目标 IP
+    dispatch_source_t _routeRefreshTimer;        // 定时刷新路由，应对 DNS 轮换
+    NSString *_serverHost;             // 当前服务器，用于切换分流路由
+    NSArray<NSString *> *_acceleratedDomains; // 非空表示按目的地分流
 }
 
 - (void)startTunnelWithOptions:(NSDictionary<NSString *,NSObject *> *)options completionHandler:(void (^)(NSError * _Nullable))completionHandler {
@@ -58,6 +86,12 @@ static void WriteLog(NSString *format, ...) {
     NSString *serverPort = portNumber ? [portNumber stringValue] : @"10011";
     WriteLog(@"📝 [PacketTunnel] 服务器端口: %@", serverPort);
 
+    _serverHost = [serverHost copy];
+    NSArray *configuredDomains = proto.providerConfiguration[@"acceleratedDomains"];
+    _acceleratedDomains = [configuredDomains isKindOfClass:[NSArray class]] ? [configuredDomains copy] : @[];
+    WriteLog(@"📝 [PacketTunnel] 路由模式: %@", _acceleratedDomains.count > 0 ? [NSString stringWithFormat:@"按目的地分流（%lu 个域名）", (unsigned long)_acceleratedDomains.count] : @"全局");
+
+    // 分流模式也需要先用全局路由完成 bootstrap DNS 解析，鉴权后立即切换为指定 IP 路由。
     NEPacketTunnelNetworkSettings *initialSettings = [[IntelligentRouteManager sharedManager] generateUpdatedSettingsWithTunnelAddress:serverHost];
 
     __weak PacketTunnelProvider *weakSelf = self;
@@ -121,18 +155,18 @@ static void WriteLog(NSString *format, ...) {
                 break;
             case nw_connection_state_ready:
                 WriteLog(@"✅ [PacketTunnel] 连接状态: ready (TLS 握手完成!)");
-                [strongSelf doAuthentication];
-                break;
-            case nw_connection_state_failed:
-                WriteLog(@"❌ [PacketTunnel] 连接状态: failed, error: %@", error);
-                if (strongSelf->_pendingCompletion) {
-                    NSError *err = [NSError errorWithDomain:@"PacketTunnel" code:-2 userInfo:@{
-                        NSLocalizedDescriptionKey: @"连接失败"
-                    }];
-                    strongSelf->_pendingCompletion(err);
-                    strongSelf->_pendingCompletion = nil;
+                if (!strongSelf->_authenticated) {
+                    [strongSelf doAuthentication];
                 }
                 break;
+            case nw_connection_state_failed: {
+                WriteLog(@"❌ [PacketTunnel] 连接状态: failed, error: %@", error);
+                NSError *err = [NSError errorWithDomain:@"PacketTunnel" code:-2 userInfo:@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:@"连接失败: %@", error]
+                }];
+                [strongSelf failTunnelWithError:err];
+                break;
+            }
             case nw_connection_state_cancelled:
                 WriteLog(@"🚫 [PacketTunnel] 连接状态: cancelled");
                 break;
@@ -148,7 +182,7 @@ static void WriteLog(NSString *format, ...) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
-        if (strongSelf->_pendingCompletion) {
+        if (strongSelf->_pendingCompletion && !strongSelf->_authenticated) {
             WriteLog(@"⏰ [PacketTunnel] 连接超时");
             NSError *timeoutError = [NSError errorWithDomain:@"PacketTunnel" code:-1 userInfo:@{
                 NSLocalizedDescriptionKey: @"连接服务器超时"
@@ -227,9 +261,10 @@ static void WriteLog(NSString *format, ...) {
                 strongSelf->_authenticated = YES;
                 [strongSelf startPacketForwarding];
                 [strongSelf startReceivingFromServer];
-                if (strongSelf->_pendingCompletion) {
-                    strongSelf->_pendingCompletion(nil);
-                    strongSelf->_pendingCompletion = nil;
+                if (strongSelf->_acceleratedDomains.count > 0) {
+                    [strongSelf switchToSplitTunnel];
+                } else {
+                    [strongSelf finishTunnelStartup];
                 }
             } else {
                 WriteLog(@"❌ [PacketTunnel] 鉴权失败: %@", response);
@@ -242,6 +277,99 @@ static void WriteLog(NSString *format, ...) {
                 }
             }
         }
+    });
+}
+
+- (void)finishTunnelStartup {
+    if (_pendingCompletion) {
+        _pendingCompletion(nil);
+        _pendingCompletion = nil;
+    }
+}
+
+- (void)failTunnelWithError:(NSError *)error {
+    _authenticated = NO;
+    if (_pendingCompletion) {
+        _pendingCompletion(error);
+        _pendingCompletion = nil;
+    }
+    // 必须让系统移除旧路由，否则连接已坏但 VPN 仍显示连接，会拖断其他应用网络。
+    [self cancelTunnelWithError:error];
+}
+
+// 解析所有加速域名的 IPv4 地址，返回排序后的结果
+- (NSArray<NSString *> *)resolveAcceleratedIPs {
+    NSMutableOrderedSet<NSString *> *resolvedIPs = [NSMutableOrderedSet orderedSet];
+    for (NSString *domain in _acceleratedDomains) {
+        if (![domain isKindOfClass:[NSString class]] || domain.length == 0) {
+            continue;
+        }
+
+        struct addrinfo hints;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        struct addrinfo *addresses = NULL;
+        int status = getaddrinfo(domain.UTF8String, NULL, &hints, &addresses);
+        if (status != 0) {
+            WriteLog(@"⚠️ [PacketTunnel] 解析 %@ 失败: %s", domain, gai_strerror(status));
+            continue;
+        }
+
+        for (struct addrinfo *cursor = addresses; cursor != NULL; cursor = cursor->ai_next) {
+            if (cursor->ai_family != AF_INET) {
+                continue;
+            }
+            char addressText[INET_ADDRSTRLEN];
+            struct sockaddr_in *address = (struct sockaddr_in *)cursor->ai_addr;
+            if (inet_ntop(AF_INET, &address->sin_addr, addressText, sizeof(addressText)) != NULL) {
+                [resolvedIPs addObject:[NSString stringWithUTF8String:addressText]];
+            }
+        }
+        freeaddrinfo(addresses);
+    }
+    return [resolvedIPs.array sortedArrayUsingSelector:@selector(compare:)];
+}
+
+- (void)switchToSplitTunnel {
+    WriteLog(@"🔎 [PacketTunnel] 开始解析加速域名，准备切换分流路由");
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSArray<NSString *> *destinationIPs = [strongSelf resolveAcceleratedIPs];
+        dispatch_async(strongSelf->_connectionQueue, ^{
+            if (!strongSelf->_authenticated) {
+                return;
+            }
+            if (destinationIPs.count == 0) {
+                NSError *error = [NSError errorWithDomain:@"PacketTunnel" code:-5 userInfo:@{
+                    NSLocalizedDescriptionKey: @"加速域名解析失败，未启用全局代理"
+                }];
+                WriteLog(@"❌ [PacketTunnel] 所有加速域名均解析失败，停止隧道");
+                [strongSelf failTunnelWithError:error];
+                return;
+            }
+
+            NEPacketTunnelNetworkSettings *settings = [[IntelligentRouteManager sharedManager] generateSplitTunnelSettingsWithTunnelAddress:strongSelf->_serverHost
+                                                                                                               destinationIPs:destinationIPs
+                                                                                                                      domains:strongSelf->_acceleratedDomains];
+            __weak typeof(strongSelf) weakProvider = strongSelf;
+            [strongSelf setTunnelNetworkSettings:settings completionHandler:^(NSError *error) {
+                __strong typeof(weakProvider) provider = weakProvider;
+                if (!provider) return;
+                if (error) {
+                    WriteLog(@"❌ [PacketTunnel] 切换分流路由失败: %@", error);
+                    [provider failTunnelWithError:error];
+                    return;
+                }
+                provider->_routedDestinationIPs = destinationIPs;
+                WriteLog(@"✅ [PacketTunnel] 分流路由已生效，仅 %lu 个目标 IP 及相关 DNS 走 VPN: %@", (unsigned long)destinationIPs.count, destinationIPs);
+                [provider startRouteRefreshTimer];
+                [provider finishTunnelStartup];
+            }];
+        });
     });
 }
 
@@ -264,6 +392,12 @@ static void WriteLog(NSString *format, ...) {
 
         if (error) {
             WriteLog(@"❌ [PacketTunnel] 读取服务器数据失败: %@", error);
+            if (strongSelf->_authenticated) {
+                NSError *tunnelError = [NSError errorWithDomain:@"PacketTunnel" code:-6 userInfo:@{
+                    NSLocalizedDescriptionKey: @"服务器连接已中断"
+                }];
+                [strongSelf failTunnelWithError:tunnelError];
+            }
             return;
         }
 
@@ -271,7 +405,8 @@ static void WriteLog(NSString *format, ...) {
             NSData *data = [strongSelf dataFromDispatchData:content];
             [strongSelf->_readBuffer appendData:data];
 
-            // 解析长度前缀协议: [2字节长度][IP包]
+            // 解析长度前缀协议: [2字节长度][IP包]，同一批一次性写入虚拟网卡
+            NSMutableArray<NSData *> *inboundPackets = [NSMutableArray array];
             while (strongSelf->_readBuffer.length >= 2) {
                 uint16_t lengthBigEndian;
                 [strongSelf->_readBuffer getBytes:&lengthBigEndian range:NSMakeRange(0, 2)];
@@ -284,36 +419,129 @@ static void WriteLog(NSString *format, ...) {
                 NSData *ipPacket = [strongSelf->_readBuffer subdataWithRange:NSMakeRange(2, length)];
                 [strongSelf->_readBuffer replaceBytesInRange:NSMakeRange(0, 2 + length) withBytes:NULL length:0];
 
-                [strongSelf.packetFlow writePackets:@[ipPacket] withProtocols:@[@(AF_INET)]];
+                [inboundPackets addObject:ipPacket];
+            }
+            if (inboundPackets.count > 0) {
+                NSMutableArray<NSNumber *> *protocols = [NSMutableArray arrayWithCapacity:inboundPackets.count];
+                for (NSUInteger i = 0; i < inboundPackets.count; i++) {
+                    [protocols addObject:@(AF_INET)];
+                }
+                [strongSelf.packetFlow writePackets:inboundPackets withProtocols:protocols];
             }
         }
 
-        // 继续接收
-        if (!is_complete) {
-            [strongSelf startReceivingFromServer];
+        if (is_complete) {
+            if (strongSelf->_authenticated) {
+                WriteLog(@"❌ [PacketTunnel] 服务器已关闭连接");
+                NSError *tunnelError = [NSError errorWithDomain:@"PacketTunnel" code:-6 userInfo:@{
+                    NSLocalizedDescriptionKey: @"服务器已关闭连接"
+                }];
+                [strongSelf failTunnelWithError:tunnelError];
+            }
+            return;
         }
+        [strongSelf startReceivingFromServer];
     });
 }
 
 - (void)startPacketForwarding {
     WriteLog(@"✅ [PacketTunnel] 开始从虚拟网卡读取数据包");
+    [self readPacketsFromTunnel];
+}
 
-    // 全局代理模式：从虚拟网卡读取的所有数据包都发送给服务器
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        while (YES) {
-            @autoreleasepool {
-                [self.packetFlow readPacketsWithCompletionHandler:^(NSArray<NSData *> *packets, NSArray<NSNumber *> *protocols) {
-                    for (NSData *packet in packets) {
-                        [self sendPacketToServer:packet];
-                    }
-                }];
+- (void)readPacketsFromTunnel {
+    __weak typeof(self) weakSelf = self;
+    [self.packetFlow readPacketsWithCompletionHandler:^(NSArray<NSData *> *packets, NSArray<NSNumber *> *protocols) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf->_authenticated) {
+            return;
+        }
+        @autoreleasepool {
+            // 同一批包合并为一次发送，减少 TLS 记录和小包开销
+            NSMutableData *framedBatch = [NSMutableData data];
+            for (NSUInteger i = 0; i < packets.count; i++) {
+                // 服务器只转发 IPv4；丢弃 IPv6 包，促使系统回退到 IPv4 隧道，避免 IPv6 直连被墙。
+                if (protocols.count > i && protocols[i].intValue != AF_INET) {
+                    continue;
+                }
+                uint16_t length = CFSwapInt16HostToBig((uint16_t)packets[i].length);
+                [framedBatch appendBytes:&length length:2];
+                [framedBatch appendData:packets[i]];
+            }
+            if (framedBatch.length > 0) {
+                [strongSelf sendFramedDataToServer:framedBatch];
             }
         }
+        // 每次收到回调后再注册下一次读取，避免无限循环堆积大量未完成请求。
+        [strongSelf readPacketsFromTunnel];
+    }];
+}
+
+- (void)startRouteRefreshTimer {
+    if (_routeRefreshTimer) {
+        return;
+    }
+    _routeRefreshTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _connectionQueue);
+    dispatch_source_set_timer(_routeRefreshTimer,
+                              dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC),
+                              60 * NSEC_PER_SEC,
+                              5 * NSEC_PER_SEC);
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_set_event_handler(_routeRefreshTimer, ^{
+        [weakSelf refreshRoutesIfNeeded];
+    });
+    dispatch_resume(_routeRefreshTimer);
+}
+
+- (void)stopRouteRefreshTimer {
+    if (_routeRefreshTimer) {
+        dispatch_source_cancel(_routeRefreshTimer);
+        _routeRefreshTimer = nil;
+    }
+}
+
+// 定期重新解析加速域名；DNS 返回新 IP（如 AWS 轮换）时更新隧道内路由。
+- (void)refreshRoutesIfNeeded {
+    if (!_authenticated || _acceleratedDomains.count == 0) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSArray<NSString *> *destinationIPs = [strongSelf resolveAcceleratedIPs];
+        dispatch_async(strongSelf->_connectionQueue, ^{
+            if (!strongSelf->_authenticated || destinationIPs.count == 0) {
+                return;
+            }
+            if ([destinationIPs isEqualToArray:strongSelf->_routedDestinationIPs]) {
+                return;
+            }
+
+            NEPacketTunnelNetworkSettings *settings = [[IntelligentRouteManager sharedManager] generateSplitTunnelSettingsWithTunnelAddress:strongSelf->_serverHost
+                                                                                                                   destinationIPs:destinationIPs
+                                                                                                                          domains:strongSelf->_acceleratedDomains];
+            __weak typeof(strongSelf) weakProvider = strongSelf;
+            [strongSelf setTunnelNetworkSettings:settings completionHandler:^(NSError *error) {
+                __strong typeof(weakProvider) provider = weakProvider;
+                if (!provider) return;
+                if (error) {
+                    WriteLog(@"⚠️ [PacketTunnel] 刷新分流路由失败: %@", error);
+                    return;
+                }
+                provider->_routedDestinationIPs = destinationIPs;
+                WriteLog(@"🔄 [PacketTunnel] 分流路由已刷新，共 %lu 个目标 IP", (unsigned long)destinationIPs.count);
+            }];
+        });
     });
 }
 
 - (void)stopTunnelWithReason:(NEProviderStopReason)reason completionHandler:(void (^)(void))completionHandler {
     WriteLog(@"🛑 [PacketTunnel] 停止 VPN 隧道，原因码: %ld", (long)reason);
+    _authenticated = NO;
+    [self stopRouteRefreshTimer];
     if (_connection) {
         nw_connection_cancel(_connection);
         _connection = nil;
@@ -341,21 +569,27 @@ static void WriteLog(NSString *format, ...) {
     return [NSString stringWithFormat:@"%d.%d.%d.%d", ip1, ip2, ip3, ip4];
 }
 
-- (void)sendPacketToServer:(NSData *)packet {
+- (void)sendFramedDataToServer:(NSData *)framedData {
     if (!_connection || !_authenticated) {
         return;
     }
 
-    uint16_t length = CFSwapInt16HostToBig((uint16_t)packet.length);
-    NSMutableData *payload = [[NSMutableData alloc] init];
-    [payload appendBytes:&length length:2];
-    [payload appendData:packet];
-
-    dispatch_data_t sendData = dispatch_data_create([payload bytes], [payload length],
-                                                     _connectionQueue, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    // 用析构 block 捕获数据，保证发送完成前内存有效；不能用 DEFAULT，否则会 free 非 malloc 指针。
+    dispatch_data_t sendData = dispatch_data_create(framedData.bytes, framedData.length,
+                                                     _connectionQueue, ^{
+        (void)framedData;
+    });
+    __weak typeof(self) weakSelf = self;
     nw_connection_send(_connection, sendData, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t error) {
         if (error) {
             WriteLog(@"❌ [PacketTunnel] 发送数据包失败: %@", error);
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (strongSelf && strongSelf->_authenticated) {
+                NSError *tunnelError = [NSError errorWithDomain:@"PacketTunnel" code:-7 userInfo:@{
+                    NSLocalizedDescriptionKey: @"向服务器发送数据失败"
+                }];
+                [strongSelf failTunnelWithError:tunnelError];
+            }
         }
     });
 }

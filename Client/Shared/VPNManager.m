@@ -72,7 +72,10 @@ static NSString *PacketTunnelBundleIdentifier(void) {
 }
 
 - (void)startVPNWithServerIP:(NSString *)serverIP port:(NSInteger)port completion:(void (^)(NSError * _Nullable))completion {
-    NSDictionary *providerConfig = @{@"port": @(port)};
+    NSMutableDictionary *providerConfig = [@{@"port": @(port)} mutableCopy];
+    if (self.acceleratedDomains.count > 0) {
+        providerConfig[@"acceleratedDomains"] = self.acceleratedDomains;
+    }
 
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> * _Nullable managers, NSError * _Nullable loadError) {
         if (loadError) {
@@ -101,6 +104,10 @@ static NSString *PacketTunnelBundleIdentifier(void) {
             proto.serverAddress = serverIP;
             proto.providerConfiguration = providerConfig;
             existingManager.protocolConfiguration = proto;
+#if TARGET_OS_OSX
+            // 清除旧版本保存的 per-app 规则；Packet Tunnel 不使用该规则分流。
+            existingManager.appRules = nil;
+#endif
             existingManager.enabled = YES;
 
             [existingManager saveToPreferencesWithCompletionHandler:^(NSError * _Nullable error) {

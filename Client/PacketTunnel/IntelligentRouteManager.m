@@ -69,9 +69,65 @@
 
     settings.IPv4Settings = ipv4Settings;
 
+    // 隧道内 MTU 需小于外层 TLS 路径 MTU，否则大包被丢弃，表现为小请求正常、流式/大响应卡死。
+    settings.MTU = @1280;
+
     // DNS 设置
     settings.DNSSettings = [[NEDNSSettings alloc] initWithServers:@[@"8.8.8.8", @"1.1.1.1"]];
 
+    return settings;
+}
+
+- (NEPacketTunnelNetworkSettings *)generateSplitTunnelSettingsWithTunnelAddress:(NSString *)tunnelAddress
+                                                                destinationIPs:(NSArray<NSString *> *)destinationIPs
+                                                                       domains:(NSArray<NSString *> *)domains {
+    NEPacketTunnelNetworkSettings *settings = [[NEPacketTunnelNetworkSettings alloc] initWithTunnelRemoteAddress:tunnelAddress];
+    NEIPv4Settings *ipv4Settings = [[NEIPv4Settings alloc] initWithAddresses:@[@"192.168.50.2"] subnetMasks:@[@"255.255.255.0"]];
+
+    // 目标 IP 会随 Cloudflare 轮换，仅靠启动时解析的 /32 会漏；因此同时纳入 OpenAI 使用的 Cloudflare 网段。
+    NSMutableOrderedSet<NSString *> *routedIPs = [NSMutableOrderedSet orderedSetWithArray:destinationIPs];
+    [routedIPs addObject:@"8.8.8.8"];
+    [routedIPs addObject:@"1.1.1.1"];
+    NSMutableArray<NEIPv4Route *> *includedRoutes = [NSMutableArray array];
+    NSArray<NSArray<NSString *> *> *cloudflareRanges = @[
+        @[@"104.16.0.0", @"255.240.0.0"],
+        @[@"172.64.0.0", @"255.248.0.0"],
+        @[@"162.159.0.0", @"255.255.0.0"]
+    ];
+    for (NSArray<NSString *> *range in cloudflareRanges) {
+        [includedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:range[0] subnetMask:range[1]]];
+    }
+    for (NSString *ip in routedIPs) {
+        [includedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:ip subnetMask:@"255.255.255.255"]];
+    }
+    ipv4Settings.includedRoutes = includedRoutes;
+
+    NSMutableArray<NEIPv4Route *> *excludedRoutes = [NSMutableArray array];
+    if (tunnelAddress.length > 0) {
+        [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:tunnelAddress subnetMask:@"255.255.255.255"]];
+    }
+    [excludedRoutes addObject:[[NEIPv4Route alloc] initWithDestinationAddress:@"127.0.0.0" subnetMask:@"255.0.0.0"]];
+    ipv4Settings.excludedRoutes = excludedRoutes;
+    settings.IPv4Settings = ipv4Settings;
+
+    // IPv6 会绕过 IPv4 隧道导致直连被墙，这里把 Cloudflare 的 IPv6 段也接管；
+    // 扩展端会丢弃这些 IPv6 包，让系统回退到 IPv4 走隧道。
+    NEIPv6Settings *ipv6Settings = [[NEIPv6Settings alloc] initWithAddresses:@[@"fd00:1234:5678::2"]
+                                                          networkPrefixLengths:@[@(64)]];
+    ipv6Settings.includedRoutes = @[
+        [[NEIPv6Route alloc] initWithDestinationAddress:@"2606:4700::" networkPrefixLength:@(32)],
+        [[NEIPv6Route alloc] initWithDestinationAddress:@"2a06:98c0::" networkPrefixLength:@(29)]
+    ];
+    settings.IPv6Settings = ipv6Settings;
+
+    // 隧道内 MTU 需小于外层 TLS 路径 MTU，否则大包被丢弃，表现为小请求正常、流式/大响应卡死。
+    settings.MTU = @1280;
+
+    // matchDomains 非空时不会替换系统默认 DNS，仅加速域名的解析走隧道。
+    NEDNSSettings *dnsSettings = [[NEDNSSettings alloc] initWithServers:@[@"8.8.8.8", @"1.1.1.1"]];
+    dnsSettings.matchDomains = domains;
+    dnsSettings.matchDomainsNoSearch = YES;
+    settings.DNSSettings = dnsSettings;
     return settings;
 }
 

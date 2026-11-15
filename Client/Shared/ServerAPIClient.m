@@ -33,8 +33,13 @@ static NSString * const kAdminToken = @"zhaowei1111";
             return;
         }
         if (![json[@"running"] boolValue]) {
+            // 服务端返回的 message 已包含失败原因（如端口占用、证书缺失），原样展示给用户。
+            NSString *reason = [json[@"message"] isKindOfClass:[NSString class]] ? json[@"message"] : nil;
+            NSString *description = reason.length > 0
+                ? [NSString stringWithFormat:@"服务端 VPN 服务未能启动：%@", reason]
+                : @"服务端 VPN 服务未能启动（控制接口未返回原因，请查看服务端日志）";
             NSError *notRunningError = [NSError errorWithDomain:@"ServerAPIClient" code:-100 userInfo:@{
-                NSLocalizedDescriptionKey: @"服务端 VPN 服务未能启动"
+                NSLocalizedDescriptionKey: description
             }];
             completion(notRunningError);
             return;
@@ -71,7 +76,11 @@ static NSString * const kAdminToken = @"zhaowei1111";
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request
                                                                 completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
-            completion(nil, error);
+            NSError *requestError = [NSError errorWithDomain:@"ServerAPIClient" code:error.code userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:@"无法连接控制接口 %@：%@", urlString, error.localizedDescription],
+                NSUnderlyingErrorKey: error
+            }];
+            completion(nil, requestError);
             return;
         }
 

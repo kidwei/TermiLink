@@ -29,6 +29,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (NEPacketTunnelNetworkSettings *)generateUpdatedSettingsWithTunnelAddress:(NSString *)tunnelAddress;
 
 /**
+ * 生成按目的地分流的网络设置：只有指定 IP 和加速域名的 DNS 请求走 VPN。
+ */
+- (NEPacketTunnelNetworkSettings *)generateSplitTunnelSettingsWithTunnelAddress:(NSString *)tunnelAddress
+                                                                destinationIPs:(NSArray<NSString *> *)destinationIPs
+                                                                       domains:(NSArray<NSString *> *)domains;
+
+/**
  * 清理过期缓存（定期调用）
  */
 - (void)cleanupExpiredCache;
